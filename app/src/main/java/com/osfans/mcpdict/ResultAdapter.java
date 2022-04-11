@@ -6,12 +6,11 @@ import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.database.Cursor;
-import android.graphics.Paint;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.preference.PreferenceManager;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,45 +25,47 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.core.text.HtmlCompat;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
-import static com.osfans.mcpdict.MCPDatabase.COL_BH;
-import static com.osfans.mcpdict.MCPDatabase.COL_BS;
-import static com.osfans.mcpdict.MCPDatabase.COL_HD;
-import static com.osfans.mcpdict.MCPDatabase.COL_HZ;
-import static com.osfans.mcpdict.MCPDatabase.COL_KX;
-import static com.osfans.mcpdict.MCPDatabase.COL_SW;
-import static com.osfans.mcpdict.MCPDatabase.getColor;
-import static com.osfans.mcpdict.MCPDatabase.getLabel;
+import static com.osfans.mcpdict.DB.COL_BH;
+import static com.osfans.mcpdict.DB.COL_BS;
+import static com.osfans.mcpdict.DB.COL_HD;
+import static com.osfans.mcpdict.DB.COL_HZ;
+import static com.osfans.mcpdict.DB.COL_KX;
+import static com.osfans.mcpdict.DB.COL_SW;
+import static com.osfans.mcpdict.DB.HD;
+import static com.osfans.mcpdict.DB.HZ;
+import static com.osfans.mcpdict.DB.KX;
+import static com.osfans.mcpdict.DB.SW;
+import static com.osfans.mcpdict.DB.getLabel;
 
-public class SearchResultCursorAdapter extends CursorAdapter {
+public class ResultAdapter extends CursorAdapter {
 
     private static WeakReference<Context> context;
     private final int layout;
     private final LayoutInflater inflater;
     private final boolean showFavoriteButton;
-    private final Typeface mTypefaceHan;
 
-    public SearchResultCursorAdapter(Context context, int layout, Cursor cursor, boolean showFavoriteButton) {
+    public ResultAdapter(Context context, int layout, Cursor cursor, boolean showFavoriteButton) {
         super(context, cursor, FLAG_REGISTER_CONTENT_OBSERVER);
-        SearchResultCursorAdapter.context = new WeakReference<>(context);
+        ResultAdapter.context = new WeakReference<>(context);
         this.layout = layout;
         this.inflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         this.showFavoriteButton = showFavoriteButton;
-        mTypefaceHan = ResourcesCompat.getFont(context, R.font.han);
     }
 
     private static Context getContext() {
         return context.get();
     }
 
-    private static View.OnClickListener getListener(final int index) {
+    private static View.OnClickListener getListener(final String lang) {
         return v -> {
             ViewHolder holder = (ViewHolder) ((View)v.getParent().getParent()).getTag();
-            holder.col = index;
-            ActivityWithOptionsMenu activity = (ActivityWithOptionsMenu) getContext();
+            holder.col = DB.getColumnIndex(lang);
+            BaseActivity activity = (BaseActivity) getContext();
             activity.registerForContextMenu(v);
             activity.openContextMenu(v);
             activity.unregisterForContextMenu(v);
@@ -81,9 +82,9 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         return getMeasuredWidth(textView);
     }
 
-    private static void formatTextView(TextView tv, int i) {
-        int color = MCPDatabase.getColor(i);
-        int subColor = MCPDatabase.getSubColor(i);
+    private static void formatTextView(TextView tv, String lang) {
+        int color = DB.getColor(lang);
+        int subColor = DB.getSubColor(lang);
         if (color == subColor) {
             tv.setBackgroundTintList(ColorStateList.valueOf(color));
         } else {
@@ -106,46 +107,39 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         int col = -1;
 
         public ViewHolder(View view, Context context) {
-            tvHZ = (TextView) view.findViewById(R.id.text_hz);
-            tvHZ.setOnClickListener(getListener(COL_HZ));
+            tvHZ = view.findViewById(R.id.text_hz);
+            tvHZ.setOnClickListener(getListener(HZ));
             tvUnicode = view.findViewById(R.id.text_unicode);
-            int color = MCPDatabase.getColor(MCPDatabase.COL_LF);
-            tvUnicode.setTextColor(color);
             tvSW = view.findViewById(R.id.text_sw);
-            tvSW.setText(getLabel(COL_SW));
-            color = MCPDatabase.getColor(COL_SW);
-            tvSW.setTextColor(color);
+            tvSW.setText(getLabel(SW));
             tvKX = view.findViewById(R.id.text_kx);
-            tvKX.setText(getLabel(COL_KX));
-            color = MCPDatabase.getColor(COL_KX);
-            tvKX.setTextColor(color);
+            tvKX.setText(getLabel(KX));
             tvHD = view.findViewById(R.id.text_hd);
-            tvHD.setText(getLabel(COL_HD));
-            color = MCPDatabase.getColor(COL_HD);
-            tvHD.setTextColor(color);
+            tvHD.setText(getLabel(HD));
             tvComment = view.findViewById(R.id.text_comment);
             tvVariant = view.findViewById(R.id.text_variants);
             btnMap = view.findViewById(R.id.button_map);
             btnFavorite = view.findViewById(R.id.button_favorite);
-            tvDetails = new TextView[MCPDatabase.COL_LAST_READING + 1];
-            rows = new TableRow[MCPDatabase.COL_LAST_READING + 1];
-            tvDetails[COL_HZ] = tvHZ;
+            tvDetails = new TextView[DB.COL_LAST_LANG + 1];
+            rows = new TableRow[DB.COL_LAST_LANG + 1];
+            tvDetails[0] = tvHZ;
             TableLayout table = view.findViewById(R.id.text_readings);
-            for (int i = MCPDatabase.COL_FIRST_READING; i <= MCPDatabase.COL_LAST_READING; i++) {
+            for (String lang: DB.getLanguages()) {
+                int i = DB.getColumnIndex(lang);
                 TableRow row = (TableRow)LayoutInflater.from(context).inflate(R.layout.search_result_row, null);
                 TextView textViewName = row.findViewById(R.id.text_name);
-                String name = MCPDatabase.getLabel(i);
-                formatTextView(textViewName, i);
+                String name = DB.getLabel(lang);
+                if (TextUtils.isEmpty(name)) continue;
+                formatTextView(textViewName, lang);
                 textViewName.setText(name);
                 float ratio = 8f/(name.getBytes().length + name.length()) * 1.25f;
                 if (ratio < 1) textViewName.setTextScaleX(ratio);
-                row.setOnClickListener(getListener(i));
+                row.setOnClickListener(getListener(lang));
                 table.addView(row);
                 tvDetails[i]  = row.findViewById(R.id.text_detail);
                 rows[i] = row;
             }
             table.setColumnShrinkable(1, true);
-
         }
     }
 
@@ -157,61 +151,60 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         return view;
     }
 
-    public static boolean isColumnVisible(String languages, Set<String> customs, int i) {
-        if (i < MCPDatabase.COL_FIRST_READING) return true;
-        if (languages.contentEquals("3")) { //縣級
-            int size = MCPDatabase.getSize(i);
-            return MCPDatabase.isDialect(i) && size >= 3;
+    public static boolean isColumnVisible(String languages, Set<String> customs, String lang) {
+        if (DB.isPreLang(lang) || languages.contentEquals("*")) return true;
+        if (languages.contentEquals("3") || languages.contentEquals("5")) {
+            int size = DB.getSize(lang);
+            return size >= Integer.parseInt(languages);
         }
-        if (languages.contentEquals("5")) {
-            int size = MCPDatabase.getSize(i);
-            return MCPDatabase.isDialect(i) && size == 5;
-        }
-        String column = MCPDatabase.getColumnName(i);
         if (TextUtils.isEmpty(languages)) {
             if (customs == null || customs.size() == 0) return true;
-            return customs.contains(column);
+            return customs.contains(lang);
         }
-        return column.matches(languages);
+        ArrayList<String> array = DB.getLanguages(languages);
+        if (array != null && array.size() > 0) {
+            return array.contains(lang);
+        }
+        return lang.matches(languages);
     }
 
-    public static CharSequence formatIPA(int i, String string) {
+    public static CharSequence formatIPA(String lang, String string) {
         CharSequence cs;
         if (TextUtils.isEmpty(string)) return "";
-        switch (MCPDatabase.getColumnName(i)) {
-            case MCPDatabase.SEARCH_AS_SG:
+        switch (lang) {
+            case DB.SG:
                 cs = getRichText(string);
                 break;
-            case MCPDatabase.SEARCH_AS_BA:
+            case DB.BA:
                 cs = baDisplayer.display(string);
                 break;
-            case MCPDatabase.SEARCH_AS_MC:
-                cs = getRichText(middleChineseDisplayer.display(string));
+            case DB.GY:
+                cs = getRichText(gyDisplayer.display(string));
                 break;
-            case MCPDatabase.SEARCH_AS_CMN:
-                cs = getRichText(mandarinDisplayer.display(string));
+            case DB.CMN:
+                cs = getRichText(cmnDisplayer.display(string));
                 break;
-            case MCPDatabase.SEARCH_AS_GZ:
-                cs = cantoneseDisplayer.display(string);
+            case DB.HK:
+                cs = hkDisplayer.display(string);
                 break;
-            case MCPDatabase.SEARCH_AS_NAN:
-                cs = getRichText(nanDisplayer.display(string));
+            case DB.TW:
+                cs = getRichText(twDisplayer.display(string));
                 break;
-            case MCPDatabase.SEARCH_AS_KOR:
-                cs = koreanDisplayer.display(string);
+            case DB.KOR:
+                cs = korDisplayer.display(string);
                 break;
-            case MCPDatabase.SEARCH_AS_VI:
-                cs = vietnameseDisplayer.display(string);
+            case DB.VI:
+                cs = viDisplayer.display(string);
                 break;
-            case MCPDatabase.SEARCH_AS_JA_GO:
-            case MCPDatabase.SEARCH_AS_JA_KAN:
-            case MCPDatabase.SEARCH_AS_JA_TOU:
-            case MCPDatabase.SEARCH_AS_JA_KWAN:
-            case MCPDatabase.SEARCH_AS_JA_OTHER:
-                cs = getRichText(japaneseDisplayer.display(string));
+            case DB.JA_GO:
+            case DB.JA_KAN:
+            case DB.JA_TOU:
+            case DB.JA_KWAN:
+            case DB.JA_OTHER:
+                cs = getRichText(jaDisplayer.display(string));
                 break;
             default:
-                cs = getRichText(toneDisplayer.display(string, i));
+                cs = getRichText(toneDisplayer.display(string, lang));
                 break;
         }
         return cs;
@@ -221,17 +214,6 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         String[] fs = (js+"\n").split("\n", 2);
         String s = String.format("<p><big><big><big>%s</big></big></big> %s</p><br><p>%s</p>", hz, fs[0], fs[1].replace("\n", "<br/>"));
         return getRichText(s);
-    }
-
-    private void hasGlyph(String s) {
-        Paint paint = new Paint();
-        Typeface typeface = Typeface.DEFAULT;//ResourcesCompat.getFont(getContext(), R.font.han);
-        //paint.setTypeface(typeface);
-        for(int i:s.codePoints().toArray()
-             ) {
-            String t = Orthography.HZ.toHz(i);
-            //Log.e("kyle", t+"="+paint.hasGlyph(t));
-        }
     }
 
     @Override
@@ -246,16 +228,17 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         String languages = PreferenceManager.getDefaultSharedPreferences(context).getString(context.getString(R.string.pref_key_show_language_names), "");
         Set<String> customs = PreferenceManager.getDefaultSharedPreferences(context).getStringSet(context.getString(R.string.pref_key_custom_languages), null);
 
-        for (int i = MCPDatabase.COL_FIRST_READING; i <= MCPDatabase.COL_LAST_READING; i++) {
+        for (String lang: DB.getLanguages()) {
+            int i = DB.getColumnIndex(lang);
             string = cursor.getString(i);
-            boolean visible = string != null && isColumnVisible(languages, customs, i);
+            boolean visible = string != null && isColumnVisible(languages, customs, lang);
+            if (holder.rows[i] == null) continue;
             holder.rows[i].setVisibility(visible ? View.VISIBLE : View.GONE);
             if (!visible) continue;
             cols.add(i);
             textView = holder.tvDetails[i];
             textView.setTag(getRawText(string));
-            CharSequence cs = formatIPA(i, string);
-            //hasGlyph(string);
+            CharSequence cs = formatIPA(lang, string);
             textView.setText(cs);
         }
 
@@ -268,13 +251,13 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         textView.setText(unicode);
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("<p><big><big><big>%s</big></big></big></p><p>【統一碼】%s %s</p>", hz, unicode, Orthography.HZ.getUnicodeExt(hz)));
-        for (int i = MCPDatabase.COL_LF; i < MCPDatabase.COL_VA; i++) {
+        for (int i = DB.COL_LF; i < DB.COL_VA; i++) {
             if (i == COL_SW) i = COL_BH;
             String str = cursor.getString(i);
             if (i == COL_BS) str = str.replace("f", "-");
             if (TextUtils.isEmpty(str)) continue;
             str = str.toUpperCase();
-            sb.append(String.format("<p>【%s】%s</p>", MCPDatabase.getFullName(i), str));
+            sb.append(String.format("<p>【%s】%s</p>", DB.getColumn(i), str));
         }
         String info = sb.toString().replace(",", ", ");
         textView.setOnClickListener(view1 -> {
@@ -397,7 +380,7 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         return s.replaceAll("[|*\\[\\]]", "").replaceAll("\\{.*?\\}", "");
     }
 
-    private static final Displayer middleChineseDisplayer = new Displayer() {
+    private static final Displayer gyDisplayer = new Displayer() {
         public String displayOne(String s) {return Orthography.MiddleChinese.display(s, getStyle(R.string.pref_key_mc_display));}
     };
 
@@ -414,19 +397,19 @@ public class SearchResultCursorAdapter extends CursorAdapter {
         return value;
     }
 
-    private static final Displayer mandarinDisplayer = new Displayer() {
+    private static final Displayer cmnDisplayer = new Displayer() {
         public String displayOne(String s) {
             return Orthography.Mandarin.display(s, getStyle(R.string.pref_key_mandarin_display));
         }
     };
 
-    private static final Displayer cantoneseDisplayer = new Displayer() {
+    private static final Displayer hkDisplayer = new Displayer() {
         public String displayOne(String s) {
             return Orthography.Cantonese.display(s, getStyle(R.string.pref_key_cantonese_romanization));
         }
     };
 
-    private static final Displayer nanDisplayer = new Displayer() {
+    private static final Displayer twDisplayer = new Displayer() {
         public String displayOne(String s) {
             return Orthography.Minnan.display(s, getStyle(R.string.pref_key_minnan_display));
         }
@@ -440,30 +423,23 @@ public class SearchResultCursorAdapter extends CursorAdapter {
 
     private static final Displayer toneDisplayer = new Displayer() {
         public String displayOne(String s) {
-            return Orthography.Tones.display(s, getCol());
+            return Orthography.Tones.display(s, getLang());
         }
     };
 
-    private static final Displayer koreanDisplayer = new Displayer() {
+    private static final Displayer korDisplayer = new Displayer() {
         public String displayOne(String s) {
             return Orthography.Korean.display(s, getStyle(R.string.pref_key_korean_display));
         }
     };
 
-    private static final Displayer vietnameseDisplayer = new Displayer() {
+    private static final Displayer viDisplayer = new Displayer() {
         public String displayOne(String s) {
             return Orthography.Vietnamese.display(s, getStyle(R.string.pref_key_vietnamese_tone_position));
         }
     };
 
-    private static final Displayer japaneseDisplayer = new Displayer() {
-        public String lineBreak(String s) {
-            if (s.charAt(0) == '[') {
-                s = '[' + s.substring(1).replace("[", "\n[");
-            }
-            return s;
-        }
-
+    private static final Displayer jaDisplayer = new Displayer() {
         public String displayOne(String s) {
             return Orthography.Japanese.display(s, getStyle(R.string.pref_key_japanese_display));
         }

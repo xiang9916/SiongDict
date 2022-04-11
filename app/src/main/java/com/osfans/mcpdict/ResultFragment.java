@@ -31,27 +31,25 @@ import java.net.URLEncoder;
 import java.util.Objects;
 import java.util.Set;
 
-import static com.osfans.mcpdict.MCPDatabase.COL_FIRST_READING;
-import static com.osfans.mcpdict.MCPDatabase.COL_HZ;
-import static com.osfans.mcpdict.MCPDatabase.COL_LAST_READING;
-import static com.osfans.mcpdict.MCPDatabase.COL_ALL_READINGS;
+import static com.osfans.mcpdict.DB.COL_ALL_LANGUAGES;
+import static com.osfans.mcpdict.DB.COL_HZ;
 
-public class SearchResultFragment extends ListFragment {
+public class ResultFragment extends ListFragment {
 
     private View selfView;
     private ListView listView;
-    private SearchResultCursorAdapter adapter;
+    private ResultAdapter adapter;
     private final boolean showFavoriteButton;
     private View selectedEntry;
     private final int GROUP_READING = 1;
 
-    private static WeakReference<SearchResultFragment> selectedFragment;
+    private static WeakReference<ResultFragment> selectedFragment;
 
-    public SearchResultFragment() {
+    public ResultFragment() {
         this(true);
     }
 
-    public SearchResultFragment(boolean showFavoriteButton) {
+    public ResultFragment(boolean showFavoriteButton) {
         super();
         this.showFavoriteButton = showFavoriteButton;
     }
@@ -84,7 +82,7 @@ public class SearchResultFragment extends ListFragment {
 
         // Set up the adapter
         if (adapter == null) {
-            adapter = new SearchResultCursorAdapter(
+            adapter = new ResultAdapter(
                 getActivity(),
                 R.layout.search_result_item,
                 null,
@@ -95,7 +93,8 @@ public class SearchResultFragment extends ListFragment {
     }
 
     private Intent getDictIntent(int i, String hz) {
-        String link = MCPDatabase.getDictLink(i);
+        String lang = DB.getColumn(i);
+        String link = DB.getDictLink(lang);
         if (TextUtils.isEmpty(link)) return null;
         String big5 = null;
         String hex = Orthography.HZ.toUnicodeHex(hz);
@@ -124,7 +123,7 @@ public class SearchResultFragment extends ListFragment {
             // info.position is the position of the item in the entire list
             // but list.getChildAt() on the next line requires the position of the item in currently visible items
         selectedEntry = list.getChildAt(position);
-        SearchResultCursorAdapter.ViewHolder holder = (SearchResultCursorAdapter.ViewHolder) selectedEntry.getTag();
+        ResultAdapter.ViewHolder holder = (ResultAdapter.ViewHolder) selectedEntry.getTag();
         int col = holder.col;
         holder.col = -1;
         TextView text = holder.tvHZ;
@@ -139,47 +138,48 @@ public class SearchResultFragment extends ListFragment {
         SubMenu menuDictLinks = itemDict.getSubMenu();
         MenuItem item;
 
-        if (col < COL_HZ) {
+        if (col < 0) {
             if (cols.size() > 2)
-                menuCopy.add(GROUP_READING, COL_ALL_READINGS, 0, getString(R.string.all_reading));
-            for (int i = MCPDatabase.COL_HZ; i <= MCPDatabase.COL_LAST_READING; i++) {
-                if ((cols.contains(i))) menuCopy.add(GROUP_READING, i, 0, MCPDatabase.getFullName(i));
+                menuCopy.add(GROUP_READING, COL_ALL_LANGUAGES, 0, getString(R.string.all_reading));
+            for (int i = 0; i <= DB.COL_LAST_LANG; i++) {
+                if ((cols.contains(i))) menuCopy.add(GROUP_READING, i, 0, DB.getColumn(i));
             }
 
-            for (int i = MCPDatabase.COL_HZ; i <= MCPDatabase.COL_LAST_READING; i++) {
-                String dict = MCPDatabase.getDictName(i);
+            for (String lang: DB.getSearchColumns()) {
+                String dict = DB.getDictName(lang);
+                int i = DB.getColumnIndex(lang);
                 if ((cols.contains(i)) && !TextUtils.isEmpty(dict)) {
                     item = menuDictLinks.add(dict);
                     item.setIntent(getDictIntent(i, hz));
                 }
             }
         } else {
-            String dict = MCPDatabase.getDictName(col);
+            String lang = DB.getColumn(col);
+            String dict = DB.getDictName(lang);
             if (!TextUtils.isEmpty(dict)) {
                 item = menu.add(getString(R.string.one_dict_links, hz, dict));
                 item.setIntent(getDictIntent(col, hz));
             }
             menu.add(GROUP_READING, COL_HZ, 90, getString(R.string.copy_hz));
-            if (col >= COL_FIRST_READING) {
-                String searchAsName = MCPDatabase.getFullName(col);
-                item = menu.add(getString(R.string.goto_info, searchAsName));
+            if (DB.isLang(lang)) {
+                item = menu.add(getString(R.string.goto_info, lang));
                 item.setOnMenuItemClickListener(i->{
                     Intent intent = new Intent(getContext(), InfoActivity.class);
-                    intent.putExtra("index", col);
+                    intent.putExtra("lang", lang);
                     startActivity(intent);
                     return true;
                 });
-                item = menu.add(getString(R.string.search_homophone, hz, searchAsName));
+                item = menu.add(getString(R.string.search_homophone, hz, lang));
                 item.setOnMenuItemClickListener(i->{
-                    DictionaryFragment dictionaryFragment = ((MainActivity) requireActivity()).getDictionaryFragment();
+                    DictFragment dictFragment = ((MainActivity) requireActivity()).getDictionaryFragment();
                     String query = holder.tvDetails[col].getTag().toString();
-                    dictionaryFragment.refresh(query, col);
+                    dictFragment.refresh(query, lang);
                     return true;
                 });
-                menu.add(GROUP_READING, col, 0, getString(R.string.copy_one_reading, hz, searchAsName));
+                menu.add(GROUP_READING, col, 0, getString(R.string.copy_one_reading, hz, lang));
             }
             if (cols.size() > 2)
-                menu.add(GROUP_READING, COL_ALL_READINGS, 0, getString(R.string.copy_all_reading));
+                menu.add(GROUP_READING, COL_ALL_LANGUAGES, 0, getString(R.string.copy_all_reading));
             itemCopy.setVisible(false);
             itemDict.setVisible(false);
         }
@@ -208,7 +208,7 @@ public class SearchResultFragment extends ListFragment {
     }
 
     public void shareReadings() {
-        String text = getCopyText(selectedEntry, COL_ALL_READINGS);
+        String text = getCopyText(selectedEntry, COL_ALL_LANGUAGES);
         String title = getCopyText(selectedEntry, COL_HZ);
         Intent intent = new Intent(android.content.Intent.ACTION_SEND);
         intent.setType("text/plain");
@@ -235,22 +235,23 @@ public class SearchResultFragment extends ListFragment {
     }
 
     private String getCopyText(View entry, int col) {
-        SearchResultCursorAdapter.ViewHolder holder = (SearchResultCursorAdapter.ViewHolder) entry.getTag();
+        ResultAdapter.ViewHolder holder = (ResultAdapter.ViewHolder) entry.getTag();
         Set<Integer> cols = holder.cols;
 
         if (cols.contains(col))
             return holder.tvDetails[col].getText().toString();
 
-        if (col == COL_ALL_READINGS) {
+        if (col == COL_ALL_LANGUAGES) {
             if (cols.size() <= 2) return null;
             StringBuilder sb = new StringBuilder();
             String hz = getCopyText(entry, COL_HZ);
             assert hz != null;
             sb.append(String.format("%s %s\n", hz, Orthography.HZ.toUnicode(hz)));
-            for (int i = COL_FIRST_READING; i <= COL_LAST_READING; i ++) {
+            for (String lang: DB.getLanguages()) {
+                int i = DB.getColumnIndex(lang);
                 String s = getCopyText(entry, i);
                 if (s != null) {
-                    sb.append(formatReading(entry, i));
+                    sb.append(formatReading(entry, lang));
                 }
             }
             return sb.toString();
@@ -263,9 +264,9 @@ public class SearchResultFragment extends ListFragment {
         return "[" + prefix + "]" + separator + reading + "\n";
     }
 
-    private String formatReading(View entry, int index) {
-        String prefix = MCPDatabase.getLabel(index);
-        String reading = Objects.requireNonNull(getCopyText(entry, index));
+    private String formatReading(View entry, String lang) {
+        String prefix = DB.getLabel(lang);
+        String reading = Objects.requireNonNull(getCopyText(entry, DB.getColumnIndex(lang)));
         return formatReading(prefix, reading);
     }
 

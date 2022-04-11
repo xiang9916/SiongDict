@@ -10,8 +10,8 @@ import androidx.annotation.NonNull;
 import androidx.webkit.WebSettingsCompat;
 import androidx.webkit.WebViewFeature;
 
-public class AutoWebView extends WebView {
-    public AutoWebView(@NonNull Context context, AttributeSet attrs) {
+public class MyWebView extends WebView {
+    public MyWebView(@NonNull Context context, AttributeSet attrs) {
         super(context, attrs);
         WebSettings settings = getSettings();
         settings.setJavaScriptEnabled(true);

@@ -26,13 +26,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-public class DictionaryFragment extends Fragment implements RefreshableFragment {
+public class DictFragment extends Fragment implements RefreshableFragment {
 
     private View selfView;
-    private CustomSearchView searchView;
+    private MySearchView searchView;
     private Spinner spinnerSearchAs, spinnerShowLang;
     private CheckBox checkBoxAllowVariants;
-    private SearchResultFragment fragmentResult;
+    private ResultFragment fragmentResult;
     ArrayAdapter<CharSequence> adapter, adapterShowLang, adapterShowChar;
 
     private void updateCurrentLanguage() {
@@ -41,12 +41,14 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
         int position = spinnerShowLang.getSelectedItemPosition();
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(getActivity());
         sp.edit().putInt(getString(R.string.pref_key_show_language_index), position).apply();
-        String name = getResources().getStringArray(R.array.pref_values_show_languages)[position];
+        String[] preFqs = getResources().getStringArray(R.array.pref_values_show_languages);
+        String name;
+        if (position < 0) name = "*";
+        else if (position < preFqs.length) name = preFqs[position];
+        else name = spinnerShowLang.getSelectedItem().toString();
         if (position == 1 || position == 2) {
-            int mode = MCPDatabase.getColumnIndex(getContext());
-            name = MCPDatabase.getColumnName(mode);
-            if (name.contentEquals("ja_tou")) name = "ja_.+";
-            if (position == 1) name = "cmn_|ltc_mc|" + name;
+            name = Utils.getLanguage(getContext());
+            if (position == 1) name = String.format("%s|%s|%s", DB.CMN, DB.GY, name);
         }
         sp.edit().putString(getString(R.string.pref_key_show_language_names), name).apply();
     }
@@ -71,15 +73,14 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
             refresh();
             fragmentResult.scrollToTop();
         });
+        String query = searchView.getQuery();
+        if (!TextUtils.isEmpty(query)) searchView.setQuery(query);
 
         // Set up the spinner
         spinnerShowLang = selfView.findViewById(R.id.spinner_show_languages);
-        adapterShowLang = ArrayAdapter.createFromResource(requireActivity(),
-                R.array.pref_entries_show_languages, android.R.layout.simple_spinner_item);
+        adapterShowLang = new ArrayAdapter<>(requireActivity(), android.R.layout.simple_spinner_item);
         adapterShowLang.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerShowLang.setAdapter(adapterShowLang);
-        int position = PreferenceManager.getDefaultSharedPreferences(getActivity()).getInt(getString(R.string.pref_key_show_language_index), 0);
-        spinnerShowLang.setSelection(position);
         spinnerShowLang.setOnItemSelectedListener(new OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -94,7 +95,7 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
                 R.array.pref_entries_charset, android.R.layout.simple_spinner_item);
         adapterShowChar.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerShowChar.setAdapter(adapterShowChar);
-        position = PreferenceManager.getDefaultSharedPreferences(getActivity()).getInt(getString(R.string.pref_key_charset), 0);
+        int position = PreferenceManager.getDefaultSharedPreferences(getActivity()).getInt(getString(R.string.pref_key_charset), 0);
         spinnerShowChar.setSelection(position);
         spinnerShowChar.setOnItemSelectedListener(new OnItemSelectedListener() {
             @Override
@@ -131,7 +132,7 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
         checkBoxAllowVariants.setOnCheckedChangeListener(checkBoxListener);
 
         // Get a reference to the SearchResultFragment
-        fragmentResult = (SearchResultFragment) getChildFragmentManager().findFragmentById(R.id.fragment_search_result);
+        fragmentResult = (ResultFragment) getChildFragmentManager().findFragmentById(R.id.fragment_search_result);
 
         return selfView;
     }
@@ -160,7 +161,7 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
         new AsyncTask<Void, Void, Cursor>() {
             @Override
             protected Cursor doInBackground(Void... params) {
-                return MCPDatabase.search(getContext());
+                return DB.search(getContext());
             }
             @Override
             protected void onPostExecute(Cursor data) {
@@ -168,7 +169,7 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
                 TextView textEmpty = fragmentResult.requireView().findViewById(android.R.id.empty);
                 String query = searchView.getQuery();
                 if (TextUtils.isEmpty(query)) {
-                    textEmpty.setText(MCPDatabase.getIntro(getContext()));
+                    textEmpty.setText(DB.getIntro(getContext()));
                     textEmpty.setMovementMethod(LinkMovementMethod.getInstance());
                 }
                 else {
@@ -181,10 +182,11 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
 
     private void updateResult(Cursor data) {
         TextView textResult = selfView.findViewById(R.id.result);
-        AutoWebView webView = selfView.findViewById(R.id.resultRich);
+        MyWebView webView = selfView.findViewById(R.id.resultRich);
         final String query = searchView.getQuery();
-        int i = spinnerSearchAs.getSelectedItemPosition();
-        boolean isZY = MCPDatabase.isReading(i) && query.length() >= 3
+        Object obj = spinnerSearchAs.getSelectedItem();
+        String lang = obj != null ? obj.toString() : DB.HZ;
+        boolean isZY = DB.isLang(lang) && query.length() >= 3
                 && !Orthography.HZ.isBS(query)
                 && Orthography.HZ.isHz(query);
         Map<String, String> pys = new HashMap<>();
@@ -202,7 +204,8 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
             }
             for (data.moveToFirst(); !data.isAfterLast(); data.moveToNext()) {
                 String hz = data.getString(0);
-                CharSequence py = SearchResultCursorAdapter.formatIPA(i, SearchResultCursorAdapter.getRawText(data.getString(i)));
+                int i = data.getColumnIndex(lang);
+                CharSequence py = ResultAdapter.formatIPA(lang, ResultAdapter.getRawText(data.getString(i)));
                 if (isZY) {
                     pys.put(hz, py.toString());
                 } else {
@@ -235,9 +238,14 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
         if (index >= 0) spinnerSearchAs.setSelection(index);
     }
 
-    public void refresh(String query, int mode) {
+    private void refreshShowLang() {
+        int index = PreferenceManager.getDefaultSharedPreferences(getActivity()).getInt(getString(R.string.pref_key_show_language_index), 0);
+        spinnerShowLang.setSelection(index);
+    }
+
+    public void refresh(String query, String lang) {
         searchView.setQuery(query);
-        MCPDatabase.putColumnIndex(getContext(), mode);
+        Utils.putLanguage(getContext(), lang);
         refreshSearchAs();
         refresh();
     }
@@ -245,17 +253,27 @@ public class DictionaryFragment extends Fragment implements RefreshableFragment 
     public void refreshAdapter() {
         if (adapter != null) {
             adapter.clear();
-            if (MCPDatabase.getLanguages() == null) return;
+            String[] columns = DB.getSearchColumns();
+            if (columns == null) return;
             Set<String> customs = PreferenceManager.getDefaultSharedPreferences(getContext()).getStringSet(getString(R.string.pref_key_custom_languages), null);
-            if (customs == null || customs.size() == 0) adapter.addAll(MCPDatabase.getLanguages());
+            if (customs == null || customs.size() == 0) {
+                adapter.addAll(columns);
+            }
             else {
-                for (int i = 0; i < MCPDatabase.COL_JA_ANY; i++) {
-                    String name = MCPDatabase.getColumnName(i);
-                    if (customs.contains(name)) adapter.add(MCPDatabase.getFullName(i));
+                for (String lang: columns) {
+                    if (customs.contains(lang)) adapter.add(lang);
                 }
             }
             //adapter.add(getString(R.string.search_as_ja_any));
             refreshSearchAs();
+        }
+        if (adapterShowLang != null) {
+            adapterShowLang.clear();
+            String[] preFqs = getResources().getStringArray(R.array.pref_entries_show_languages);
+            adapterShowLang.addAll(preFqs);
+            String[] fqs = DB.getFqs();
+            adapterShowLang.addAll(fqs);
+            refreshShowLang();
         }
     }
 }

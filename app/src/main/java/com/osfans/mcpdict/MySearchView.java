@@ -11,17 +11,17 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.RelativeLayout;
 
-public class CustomSearchView extends RelativeLayout {
+public class MySearchView extends RelativeLayout {
 
     private final EditText editText;
     private final Button clearButton;
     private final Button searchButton;
 
-    public CustomSearchView(Context context) {
+    public MySearchView(Context context) {
         this(context, null);
     }
 
-    public CustomSearchView(Context context, AttributeSet attrs) {
+    public MySearchView(Context context, AttributeSet attrs) {
         super(context, attrs);
 
         LayoutInflater inflater = (LayoutInflater)

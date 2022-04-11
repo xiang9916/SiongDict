@@ -17,7 +17,7 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 @SuppressLint("UseSparseArrays")
-public class FavoriteCursorAdapter extends CursorAdapter {
+public class FavoriteAdapter extends CursorAdapter {
 
     private final int layout;
     private final LayoutInflater inflater;
@@ -26,7 +26,7 @@ public class FavoriteCursorAdapter extends CursorAdapter {
         // Answer to life, the universe and everything
     private final Set<String> expandedItems;
 
-    public FavoriteCursorAdapter(Context context, int layout, Cursor cursor, FavoriteFragment fragment) {
+    public FavoriteAdapter(Context context, int layout, Cursor cursor, FavoriteFragment fragment) {
         super(context, cursor, FLAG_REGISTER_CONTENT_OBSERVER);
         this.layout = layout;
         this.inflater = (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
@@ -44,7 +44,7 @@ public class FavoriteCursorAdapter extends CursorAdapter {
         view.findViewWithTag("container").setId(id);
 
         // Add a SearchResultFragment to the container
-        SearchResultFragment fragment = new SearchResultFragment(false);
+        ResultFragment fragment = new ResultFragment(false);
         this.fragment.getChildFragmentManager().beginTransaction().add(id, fragment).commit();
         view.setTag(fragment);
             // Set the fragment as a tag of the view, so it can be retrieved in expandItem
@@ -105,11 +105,11 @@ public class FavoriteCursorAdapter extends CursorAdapter {
         expandedItems.add(hz);
         if (view == null) return;
         final View container = view.findViewWithTag("container");
-        final SearchResultFragment fragment = (SearchResultFragment) view.getTag();
+        final ResultFragment fragment = (ResultFragment) view.getTag();
         new AsyncTask<Void, Void, Cursor>() {
             @Override
             protected Cursor doInBackground(Void... params) {
-                return MCPDatabase.directSearch(hz);
+                return DB.directSearch(hz);
             }
             @Override
             protected void onPostExecute(Cursor data) {
