@@ -1,9 +1,17 @@
-import re, os, sys
+import re, sys
+from io import StringIO
+from pdfminer.high_level import extract_text_to_fp
 
-html = open(sys.argv[1], "r", encoding="U8").read()
-
+with StringIO() as out:
+    extract_text_to_fp(inf=open(sys.argv[1], "rb"), output_type="html", outfp=out, codec=None)
+    out.seek(0)
+    html = out.read()
+html = re.sub(r"(b'.*?')", lambda x:eval(x.group(1)).decode("gb18030"), html)
+html = re.sub(r'<span style="position:absolute;.*?></span>', "", html, flags=re.M|re.S)
+html = re.sub(r'<a .*?>.*?</a>', "", html, flags=re.M|re.S)
 html = re.sub("</div>", "", html, flags=re.M|re.S)
 html = re.sub("<div.*?>", "", html, flags=re.M|re.S)
+html = re.sub("\n{2,}", "\n", html, flags=re.M|re.S)
 html = re.sub(r'<span style="[^"]+:8px">(.*?)</span>', "", html, flags=re.M|re.S)
 html = re.sub("(\n<br>)([^<])", "\\2", html, flags=re.M|re.S)
 html = re.sub(r'(\n<br>)(</span><span style="font-family: 方)', "\\2", html, flags=re.M|re.S)
@@ -34,16 +42,37 @@ d1 = {
     "": "˙",
 }
 d = {
-    "■39": "1",
-    "■29": "2",
-    "■34": "3",
-    "■26": "6",
-    "■54": "7a",
-    "■5d": "7b",
-    "■3f": "8",
-    "■63": "ŋ̍",
+    "":"1",
+    "":"ə",
+    "":"ɔ",
+    "":"∅",
+    "":"",
+    "":"2",
+    "":"ȵ",
+    "":"ɛ",
+    "":"ʐ",
+    "":"5",
+    "":"",
+    "":"ŋ",
+    "":"3",
+    "":"ɕ",
+    "":"ʰ",
+    "":"ɤ",
+    "":"ʅ",
+    "":"ʔ",
+    "":"ɛ̃",
+    "":"ɿ",
+    "":"7",
+    "":"ʂ",
+    "":"",
+    "":"˙",
 }
 for i,j in d.items():
-    html = html.replace(i, j)
+    if j:
+        html = html.replace(i, j)
 html = re.sub(r'(<span style="font-family: ZIeFfH-\d; font-size:10px">[^\d□])', '\n<br>\\1', html, flags=re.M|re.S)
+
+puas = set(re.findall("[\ue000-\uefff]", html))
+for i in puas:
+    print(f'"{i}":"",')
 open(sys.argv[2], "w", encoding="U8").write(html)
