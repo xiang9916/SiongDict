@@ -16,7 +16,8 @@ data class PronEntry(
 data class DialectEntry(
     val lang: String,
     val sortKey: String,
-    val prons: List<PronEntry>
+    val prons: List<PronEntry>,
+    val cognate: CognateGroup? = null
 )
 
 data class CharGroup(
@@ -39,3 +40,16 @@ enum class SearchMode(val label: String) {
     PRON("搜音"),
     MEANING("搜釋義")
 }
+
+data class CognateEntry(
+    val lang: String,
+    val ipa: String,
+    val note: String,
+    val sortKey: String
+)
+
+data class CognateGroup(
+    val groupId: String,
+    val semanticLabel: String,
+    val members: List<CognateEntry>
+)

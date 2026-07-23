@@ -26,6 +26,8 @@ import org.siongdict.app.data.SearchMode
 import org.siongdict.app.data.SearchResult
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.DialectEntry
+import org.siongdict.app.data.CognateGroup
+import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +40,8 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                 TopAppBar(
                     title = { Text("湘典", fontWeight = FontWeight.Bold) },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = Color(0xFF8B0000),
+                        titleContentColor = Color.White
                     )
                 )
             }
@@ -189,6 +192,7 @@ private fun ResultCard(group: CharGroup) {
 
 @Composable
 private fun DialectBlock(dialect: DialectEntry) {
+    var expanded by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -212,6 +216,15 @@ private fun DialectBlock(dialect: DialectEntry) {
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.primary
             )
+            if (dialect.cognate != null && dialect.cognate.members.size > 1) {
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "同源 ${dialect.cognate.members.size} 詞",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.clickable { expanded = !expanded }
+                )
+            }
         }
         // 读音行：IPA 左、註釋右
         dialect.prons.forEach { p ->
@@ -234,6 +247,58 @@ private fun DialectBlock(dialect: DialectEntry) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+        // 同源词展开
+        if (expanded && dialect.cognate != null) {
+            CognateExpand(dialect.cognate, dialect.lang)
+        }
+    }
+}
+
+@Composable
+private fun CognateExpand(group: CognateGroup, currentLang: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, top = 2.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (group.semanticLabel.isNotBlank()) {
+                Text(
+                    text = "義類：${group.semanticLabel}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            group.members.forEach { m ->
+                val isCurrent = m.lang == currentLang
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = m.lang,
+                        fontSize = 12.sp,
+                        color = if (isCurrent) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = m.ipa,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isCurrent) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

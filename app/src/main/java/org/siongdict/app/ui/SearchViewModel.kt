@@ -15,6 +15,7 @@ import org.siongdict.app.data.SearchResult
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.DialectEntry
 import org.siongdict.app.data.PronEntry
+import org.siongdict.app.data.CognateGroup
 
 data class SearchUiState(
     val query: String = "",
@@ -72,13 +73,17 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         return results
             .groupBy { it.chars }
             .map { (chars, entries) ->
-                val dialects = entries
+               val dialects = entries
                     .groupBy { it.lang }
                     .map { (lang, prons) ->
+                        val cog = prons.firstOrNull()?.let { p ->
+                            try { db.getCognateGroup(lang, p.ipa) } catch (_: Exception) { null }
+                        }
                         DialectEntry(
                             lang = lang,
                             sortKey = prons.first().sortKey,
-                            prons = prons.map { PronEntry(it.ipa, it.note) }
+                            prons = prons.map { PronEntry(it.ipa, it.note) },
+                            cognate = cog
                         )
                     }
                     .sortedBy { it.sortKey }
