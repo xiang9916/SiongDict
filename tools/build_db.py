@@ -124,14 +124,15 @@ def build_database(mcpdict_dir, output_path, dialects):
 
     c.execute(
         'CREATE VIRTUAL TABLE langs USING fts5 '
-        '(字組, 語言, 讀音, 註釋, '
+        '(字組, 語言, 讀音, 註釋, 排序, '
         'columnsize=0, tokenize="unicode61 remove_diacritics 0 tokenchars \'%s\'")'
         % TOKENS
     )
 
     info_fields = [
         "語言", "簡稱", "地點", "經緯度", "聲調",
-        "地圖集二分區", "音典分區", "陳邡分區",
+        "地圖集二排序", "地圖集二分區",
+        "音典排序", "音典分區", "陳邡排序", "陳邡分區",
         "地圖集二顏色", "音典顏色",
         "省", "市", "縣", "鎮", "村",
         "行政區級別", "方言島", "歷史音",
@@ -163,7 +164,7 @@ def build_database(mcpdict_dir, output_path, dialects):
 
         for (音, 註), chars in groups.items():
             字組 = " ".join(chars)
-            items.append((字組, 簡稱, 音, 註))
+            items.append((字組, 簡稱, 音, 註, meta.get("音典排序", "")))
 
         total_chars += len(entries)
 
@@ -189,13 +190,13 @@ def build_database(mcpdict_dir, output_path, dialects):
         info_rows.append(tuple(info_row))
 
     if items:
-        c.executemany("INSERT INTO langs VALUES (?,?,?,?)", items)
+        c.executemany("INSERT INTO langs VALUES (?,?,?,?,?)", items)
     if info_rows:
         placeholders = ",".join("?" * len(info_fields))
         c.executemany(f"INSERT INTO info VALUES ({placeholders})", info_rows)
 
     conn.commit()
-    c.execute("PRAGMA user_version = 1")
+    c.execute("PRAGMA user_version = 2")
     conn.commit()
     conn.close()
 

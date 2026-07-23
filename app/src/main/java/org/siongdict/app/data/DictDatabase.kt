@@ -11,7 +11,7 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
 ) {
     companion object {
         private const val TAG = "DictDatabase"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
         private const val DB_NAME = "siongdict.db"
     }
 
@@ -19,6 +19,18 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
         val dbFile = context.getDatabasePath(DB_NAME)
         if (!dbFile.exists()) {
             copyDatabase(context)
+        } else {
+            // Check if existing database is outdated; re-copy from assets if so
+            val existing = SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY
+            )
+            val currentVersion = existing.version
+            existing.close()
+            if (currentVersion < DB_VERSION) {
+                Log.i(TAG, "Database v$currentVersion < $DB_VERSION, re-copying from assets")
+                dbFile.delete()
+                copyDatabase(context)
+            }
         }
     }
 
@@ -46,7 +58,7 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
         val db = readableDatabase
         val results = mutableListOf<SearchResult>()
         val cursor = db.rawQuery(
-            "SELECT 字組, 語言, 讀音, 註釋 FROM langs WHERE 字組 MATCH ? ORDER BY 語言",
+            "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 字組 MATCH ? ORDER BY 排序",
             arrayOf(hz)
         )
         cursor.use {
@@ -55,7 +67,8 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
                     chars = it.getString(0),
                     lang = it.getString(1),
                     ipa = it.getString(2),
-                    note = it.getString(3) ?: ""
+                    note = it.getString(3) ?: "",
+                    sortKey = it.getString(4) ?: ""
                 ))
             }
         }
@@ -66,7 +79,7 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
         val db = readableDatabase
         val results = mutableListOf<SearchResult>()
         val cursor = db.rawQuery(
-            "SELECT 字組, 語言, 讀音, 註釋 FROM langs WHERE 讀音 MATCH ? ORDER BY 語言",
+            "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 讀音 MATCH ? ORDER BY 排序",
             arrayOf(ipa)
         )
         cursor.use {
@@ -75,7 +88,8 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
                     chars = it.getString(0),
                     lang = it.getString(1),
                     ipa = it.getString(2),
-                    note = it.getString(3) ?: ""
+                    note = it.getString(3) ?: "",
+                    sortKey = it.getString(4) ?: ""
                 ))
             }
         }
@@ -86,7 +100,7 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
         val db = readableDatabase
         val results = mutableListOf<SearchResult>()
         val cursor = db.rawQuery(
-            "SELECT 字組, 語言, 讀音, 註釋 FROM langs WHERE 註釋 MATCH ? ORDER BY 語言 LIMIT 200",
+            "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 註釋 MATCH ? ORDER BY 排序 LIMIT 200",
             arrayOf(keyword)
         )
         cursor.use {
@@ -95,7 +109,8 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
                     chars = it.getString(0),
                     lang = it.getString(1),
                     ipa = it.getString(2),
-                    note = it.getString(3) ?: ""
+                    note = it.getString(3) ?: "",
+                    sortKey = it.getString(4) ?: ""
                 ))
             }
         }
