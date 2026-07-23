@@ -22,7 +22,8 @@ data class DialectEntry(
 
 data class CharGroup(
     val chars: String,
-    val entries: List<DialectEntry>
+    val entries: List<DialectEntry>,
+    val subtitle: String = ""
 )
 
 data class DialectInfo(
@@ -37,7 +38,7 @@ data class DialectInfo(
 
 enum class SearchMode(val label: String) {
     CHAR("搜字"),
-    PRON("搜音"),
+    COGNATE("搜同源"),
     MEANING("搜釋義")
 }
 

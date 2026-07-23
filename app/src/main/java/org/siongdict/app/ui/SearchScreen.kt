@@ -1,5 +1,6 @@
 package org.siongdict.app.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,13 +10,18 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -33,12 +39,22 @@ import androidx.compose.foundation.clickable
 @Composable
 fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    var showResetDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             Column {
                 TopAppBar(
                     title = { Text("湘典", fontWeight = FontWeight.Bold) },
+                    actions = {
+                        IconButton(onClick = { showResetDialog = true }) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "重置資料庫",
+                                tint = Color.White
+                            )
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color(0xFF8B0000),
                         titleContentColor = Color.White
@@ -59,8 +75,8 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("輸入漢字、IPA 或釋義") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+               placeholder = { Text("輸入漢字、同源詞或釋義") },
                 trailingIcon = {
                     if (uiState.query.isNotEmpty()) {
                         IconButton(onClick = { viewModel.updateQuery("") }) {
@@ -134,9 +150,48 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                         ResultCard(group)
                     }
                 }
-            }
-        }
+           }
+       }
     }
+
+    if (showResetDialog) {
+        ResetConfirmDialog(viewModel = viewModel, onDismiss = { showResetDialog = false })
+    }
+}
+
+@Composable
+private fun ResetConfirmDialog(
+    viewModel: SearchViewModel,
+    onDismiss: () -> Unit
+) {
+    var resetting by remember { mutableStateOf(false) }
+
+    if (resetting) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text("重置中") },
+            text = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { CircularProgressIndicator(); Text("正在重新載入資料庫…") } }
+        )
+        LaunchedEffect(Unit) {
+            viewModel.resetDatabases()
+            resetting = false
+            onDismiss()
+        }
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重置資料庫") },
+        text = { Text("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。") },
+        confirmButton = {
+            TextButton(onClick = { resetting = true }) { Text("重置") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 @Composable
@@ -161,7 +216,7 @@ private fun ResultCard(group: CharGroup) {
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // 字組标题 + 方言数
+           // 字組标题 + 方言数
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -180,6 +235,14 @@ private fun ResultCard(group: CharGroup) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            if (group.subtitle.isNotBlank()) {
+                Text(
+                    text = group.subtitle,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
             }
 
             // 各方言点读音
@@ -269,13 +332,39 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
             modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            if (group.semanticLabel.isNotBlank()) {
+            val context = LocalContext.current
+            val clipboardManager = LocalClipboardManager.current
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val headerText = if (group.semanticLabel.isNotBlank()) {
+                    "義類：${group.semanticLabel} ${group.groupId}"
+                } else {
+                    group.groupId
+                }
                 Text(
-                    text = "義類：${group.semanticLabel}",
+                    text = headerText,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.tertiary,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(
+                    onClick = {
+                        val exportText = buildCognateExportText(group)
+                        clipboardManager.setText(AnnotatedString(exportText))
+                        Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "複製同源詞",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.tertiary
+                    )
+                }
             }
             group.members.forEach { m ->
                 val isCurrent = m.lang == currentLang
