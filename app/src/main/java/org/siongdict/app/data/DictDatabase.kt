@@ -2,6 +2,7 @@ package org.siongdict.app.data
 
 import android.content.Context
 import android.util.Log
+import org.json.JSONObject
 import io.requery.android.database.sqlite.SQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteOpenHelper
 import java.io.FileOutputStream
@@ -14,6 +15,7 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         private const val DB_VERSION = 2
         private const val DB_NAME = "siongdict.db"
         private const val COG_NAME = "cognates.db"
+        private var variantMap: Map<String, List<String>>? = null
     }
 
     init {
@@ -67,12 +69,57 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         return SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
     }
 
+    fun forceReset() {
+        Log.i(TAG, "Force reset: deleting cached databases")
+        ctx.getDatabasePath(DB_NAME).delete()
+        ctx.getDatabasePath(COG_NAME).delete()
+        // Also delete SQLite temp files
+        ctx.databaseList().forEach { name ->
+            if (name.startsWith(DB_NAME) || name.startsWith(COG_NAME)) {
+                ctx.deleteDatabase(name)
+            }
+        }
+        copyDatabase()
+        copyCognateDatabase()
+        Log.i(TAG, "Force reset complete")
+    }
+
     override fun onCreate(db: SQLiteDatabase) {}
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
+    }
+
+    fun getVariants(ch: String): List<String> {
+        if (variantMap == null) {
+            loadVariants()
+        }
+        return variantMap?.get(ch) ?: listOf(ch)
+    }
+
+    private fun loadVariants() {
+        try {
+            val json = ctx.assets.open("variants.json").bufferedReader().use { it.readText() }
+            val obj = JSONObject(json)
+            val map = mutableMapOf<String, List<String>>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val arr = obj.getJSONArray(key)
+                val list = mutableListOf<String>()
+                for (i in 0 until arr.length()) {
+                    list.add(arr.getString(i))
+                }
+                map[key] = list
+            }
+            variantMap = map
+            Log.i(TAG, "Loaded ${map.size} variant mappings")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load variants.json", e)
+            variantMap = emptyMap()
+        }
     }
 
     fun searchByChar(hz: String): List<SearchResult> {
@@ -172,6 +219,49 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
             }
             if (members.isEmpty()) return null
             return CognateGroup(groupId!!, label ?: "", members)
+        } finally {
+            cogDb.close()
+        }
+    }
+
+    fun searchCognates(query: String): List<CognateGroup> {
+        val cogDb = openCognateDb() ?: return emptyList()
+        try {
+            val cursor = cogDb.rawQuery(
+                "SELECT DISTINCT cognate_group FROM cognate_auto WHERE cognate_group LIKE ? OR ipa LIKE ? OR semantic_label LIKE ?",
+                arrayOf("%$query%", "%$query%", "%$query%")
+            )
+            val groupIds = mutableListOf<String>()
+            cursor.use {
+                while (it.moveToNext()) {
+                    groupIds.add(it.getString(0))
+                }
+            }
+
+            val results = mutableListOf<CognateGroup>()
+            for (gid in groupIds) {
+                val memberCursor = cogDb.rawQuery(
+                    "SELECT lang, ipa, note, sort_key, semantic_label FROM cognate_auto WHERE cognate_group = ? ORDER BY sort_key",
+                    arrayOf(gid)
+                )
+                val members = mutableListOf<CognateEntry>()
+                var label = ""
+                memberCursor.use {
+                    while (it.moveToNext()) {
+                        label = it.getString(4) ?: ""
+                        members.add(CognateEntry(
+                            lang = it.getString(0),
+                            ipa = it.getString(1),
+                            note = it.getString(2) ?: "",
+                            sortKey = it.getString(3) ?: ""
+                        ))
+                    }
+                }
+                if (members.isNotEmpty()) {
+                    results.add(CognateGroup(gid, label, members))
+                }
+            }
+            return results
         } finally {
             cogDb.close()
         }

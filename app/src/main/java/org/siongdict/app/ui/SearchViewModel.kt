@@ -51,12 +51,26 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(loading = true, searched = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val raw = when (mode) {
-                    SearchMode.CHAR -> db.searchByChar(query)
-                    SearchMode.PRON -> db.searchByPron(query)
-                    SearchMode.MEANING -> db.searchByMeaning(query)
+                val results = when (mode) {
+                    SearchMode.CHAR -> {
+                        // 搜字：查询所有繁简异体变体，每种分别成卡，按方言数排序
+                        val variants = db.getVariants(query)
+                        variants.map { variant ->
+                            val raw = db.searchByChar(variant)
+                            groupCharResults(raw, variant)
+                       }.filter { it.isNotEmpty() }
+                           .sortedByDescending { it.first().entries.size }
+                           .flatten()
+                    }
+                    SearchMode.COGNATE -> {
+                        val cogGroups = db.searchCognates(query)
+                        groupCognateResults(cogGroups)
+                    }
+                    SearchMode.MEANING -> {
+                        val raw = db.searchByMeaning(query)
+                        groupResults(raw)
+                    }
                 }
-                val results = groupResults(raw)
                 _uiState.value = _uiState.value.copy(results = results, loading = false)
             } catch (e: Exception) {
                 Log.e(TAG, "Search failed", e)
@@ -69,11 +83,23 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun resetDatabases() {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.forceReset()
+            _uiState.value = _uiState.value.copy(
+                results = emptyList(),
+                searched = false,
+                error = null
+            )
+        }
+    }
+
+    // 搜釋義：按字組分組
     private fun groupResults(results: List<SearchResult>): List<CharGroup> {
         return results
             .groupBy { it.chars }
             .map { (chars, entries) ->
-               val dialects = entries
+                val dialects = entries
                     .groupBy { it.lang }
                     .map { (lang, prons) ->
                         val cog = prons.firstOrNull()?.let { p ->
@@ -90,5 +116,43 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 CharGroup(chars, dialects)
             }
             .sortedByDescending { it.entries.size }
+    }
+
+    // 搜字：不按字組分組，全部合併為一張卡片
+    private fun groupCharResults(results: List<SearchResult>, query: String): List<CharGroup> {
+        if (results.isEmpty()) return emptyList()
+        val dialects = results
+            .groupBy { it.lang }
+            .map { (lang, prons) ->
+                val cog = prons.firstOrNull()?.let { p ->
+                    try { db.getCognateGroup(lang, p.ipa) } catch (_: Exception) { null }
+                }
+                DialectEntry(
+                    lang = lang,
+                    sortKey = prons.first().sortKey,
+                    prons = prons.map { PronEntry(it.ipa, it.note) },
+                    cognate = cog
+                )
+            }
+            .sortedBy { it.sortKey }
+        return listOf(CharGroup(query, dialects))
+    }
+
+    // 搜同源：每個 cognate group 成為一張卡片
+    private fun groupCognateResults(groups: List<CognateGroup>): List<CharGroup> {
+        return groups.map { g ->
+            val dialects = g.members
+                .groupBy { it.lang }
+                .map { (lang, members) ->
+                    DialectEntry(
+                        lang = lang,
+                        sortKey = members.first().sortKey,
+                        prons = members.map { PronEntry(it.ipa, it.note) },
+                        cognate = null
+                    )
+                }
+                .sortedBy { it.sortKey }
+            CharGroup(g.semanticLabel, dialects, g.groupId)
+        }
     }
 }
