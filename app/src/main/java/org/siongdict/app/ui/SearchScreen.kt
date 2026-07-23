@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.siongdict.app.data.SearchMode
 import org.siongdict.app.data.SearchResult
+import org.siongdict.app.data.CharGroup
+import org.siongdict.app.data.DialectEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,8 +127,8 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(uiState.results) { result ->
-                        ResultCard(result)
+                    items(uiState.results) { group ->
+                        ResultCard(group)
                     }
                 }
             }
@@ -135,7 +137,14 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
 }
 
 @Composable
-private fun ResultCard(result: SearchResult) {
+private fun ResultCard(group: CharGroup) {
+    val displayChars = group.chars.replace(" ", "")
+    val titleSize = when {
+        displayChars.length <= 2 -> 28.sp
+        displayChars.length <= 4 -> 22.sp
+        else -> 16.sp
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -143,58 +152,88 @@ private fun ResultCard(result: SearchResult) {
         ),
         shape = RoundedCornerShape(8.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Character
-            Text(
-                text = result.chars.take(1),
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.width(40.dp),
-                color = MaterialTheme.colorScheme.onSurface
+            // 字組标题 + 方言数
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Text(
+                    text = displayChars,
+                    fontSize = titleSize,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (group.entries.size > 1) {
+                    Text(
+                        text = "${group.entries.size} 點",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 各方言点读音
+            group.entries.forEach { dialect ->
+                DialectBlock(dialect)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DialectBlock(dialect: DialectEntry) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        // 方言名行
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(MaterialTheme.colorScheme.primary)
             )
-
-            // Details
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Dialect name with color dot
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
-                    Text(
-                        text = result.lang,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    // IPA
-                    Text(
-                        text = result.ipa,
-                        fontSize = 16.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                // Notes
-                if (result.note.isNotBlank()) {
-                    Text(
-                        text = result.note,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
+            Text(
+                text = dialect.lang,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        // 读音行：IPA 左、註釋右
+        dialect.prons.forEach { p ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = p.ipa,
+                    fontSize = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = p.note,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

@@ -12,11 +12,14 @@ import kotlinx.coroutines.launch
 import org.siongdict.app.data.DictDatabase
 import org.siongdict.app.data.SearchMode
 import org.siongdict.app.data.SearchResult
+import org.siongdict.app.data.CharGroup
+import org.siongdict.app.data.DialectEntry
+import org.siongdict.app.data.PronEntry
 
 data class SearchUiState(
     val query: String = "",
     val mode: SearchMode = SearchMode.CHAR,
-    val results: List<SearchResult> = emptyList(),
+    val results: List<CharGroup> = emptyList(),
     val loading: Boolean = false,
     val searched: Boolean = false,
     val error: String? = null
@@ -47,11 +50,12 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.value = _uiState.value.copy(loading = true, searched = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val results = when (mode) {
+                val raw = when (mode) {
                     SearchMode.CHAR -> db.searchByChar(query)
                     SearchMode.PRON -> db.searchByPron(query)
                     SearchMode.MEANING -> db.searchByMeaning(query)
                 }
+                val results = groupResults(raw)
                 _uiState.value = _uiState.value.copy(results = results, loading = false)
             } catch (e: Exception) {
                 Log.e(TAG, "Search failed", e)
@@ -62,5 +66,24 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    private fun groupResults(results: List<SearchResult>): List<CharGroup> {
+        return results
+            .groupBy { it.chars }
+            .map { (chars, entries) ->
+                val dialects = entries
+                    .groupBy { it.lang }
+                    .map { (lang, prons) ->
+                        DialectEntry(
+                            lang = lang,
+                            sortKey = prons.first().sortKey,
+                            prons = prons.map { PronEntry(it.ipa, it.note) }
+                        )
+                    }
+                    .sortedBy { it.sortKey }
+                CharGroup(chars, dialects)
+            }
+            .sortedByDescending { it.entries.size }
     }
 }
