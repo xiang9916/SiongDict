@@ -6,21 +6,21 @@ import io.requery.android.database.sqlite.SQLiteDatabase
 import io.requery.android.database.sqlite.SQLiteOpenHelper
 import java.io.FileOutputStream
 
-class DictDatabase(context: Context) : SQLiteOpenHelper(
-    context, DB_NAME, null, DB_VERSION
+class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
+    ctx, DB_NAME, null, DB_VERSION
 ) {
     companion object {
         private const val TAG = "DictDatabase"
         private const val DB_VERSION = 2
         private const val DB_NAME = "siongdict.db"
+        private const val COG_NAME = "cognates.db"
     }
 
     init {
-        val dbFile = context.getDatabasePath(DB_NAME)
+        val dbFile = ctx.getDatabasePath(DB_NAME)
         if (!dbFile.exists()) {
-            copyDatabase(context)
+            copyDatabase()
         } else {
-            // Check if existing database is outdated; re-copy from assets if so
             val existing = SQLiteDatabase.openDatabase(
                 dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY
             )
@@ -29,21 +29,42 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
             if (currentVersion < DB_VERSION) {
                 Log.i(TAG, "Database v$currentVersion < $DB_VERSION, re-copying from assets")
                 dbFile.delete()
-                copyDatabase(context)
+                copyDatabase()
             }
         }
     }
 
-    private fun copyDatabase(context: Context) {
-        val dbFile = context.getDatabasePath(DB_NAME)
+    private fun copyDatabase() {
+        val dbFile = ctx.getDatabasePath(DB_NAME)
         dbFile.parentFile?.mkdirs()
         Log.i(TAG, "Copying database from assets to ${dbFile.absolutePath}")
-        context.assets.open("databases/$DB_NAME").use { input ->
-            FileOutputStream(dbFile).use { output ->
-                input.copyTo(output)
-            }
+        ctx.assets.open("databases/$DB_NAME").use { input ->
+            FileOutputStream(dbFile).use { output -> input.copyTo(output) }
         }
         Log.i(TAG, "Database copied, size=${dbFile.length()}")
+    }
+
+    private fun copyCognateDatabase() {
+        val dbFile = ctx.getDatabasePath(COG_NAME)
+        dbFile.parentFile?.mkdirs()
+        try {
+            ctx.assets.open("databases/$COG_NAME").use { input ->
+                FileOutputStream(dbFile).use { output -> input.copyTo(output) }
+            }
+            Log.i(TAG, "Cognates database copied, size=${dbFile.length()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Cognates database not found in assets, skipping")
+            dbFile.delete()
+        }
+    }
+
+    private fun openCognateDb(): SQLiteDatabase? {
+        val dbFile = ctx.getDatabasePath(COG_NAME)
+        if (!dbFile.exists()) {
+            copyCognateDatabase()
+        }
+        if (!dbFile.exists()) return null
+        return SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
     }
 
     override fun onCreate(db: SQLiteDatabase) {}
@@ -115,6 +136,45 @@ class DictDatabase(context: Context) : SQLiteOpenHelper(
             }
         }
         return results
+    }
+
+    fun getCognateGroup(lang: String, ipa: String): CognateGroup? {
+        val cogDb = openCognateDb() ?: return null
+        try {
+            val cursor = cogDb.rawQuery(
+                "SELECT cognate_group, semantic_label FROM cognate_auto WHERE lang = ? AND ipa = ? LIMIT 1",
+                arrayOf(lang, ipa)
+            )
+            var groupId: String? = null
+            var label: String? = null
+            cursor.use {
+                if (it.moveToFirst()) {
+                    groupId = it.getString(0)
+                    label = it.getString(1)
+                }
+            }
+            if (groupId == null) return null
+
+            val members = mutableListOf<CognateEntry>()
+            val memberCursor = cogDb.rawQuery(
+                "SELECT lang, ipa, note, sort_key FROM cognate_auto WHERE cognate_group = ? ORDER BY sort_key",
+                arrayOf(groupId)
+            )
+            memberCursor.use {
+                while (it.moveToNext()) {
+                    members.add(CognateEntry(
+                        lang = it.getString(0),
+                        ipa = it.getString(1),
+                        note = it.getString(2) ?: "",
+                        sortKey = it.getString(3) ?: ""
+                    ))
+                }
+            }
+            if (members.isEmpty()) return null
+            return CognateGroup(groupId!!, label ?: "", members)
+        } finally {
+            cogDb.close()
+        }
     }
 
     fun getDialectInfo(jc: String): DialectInfo? {
