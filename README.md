@@ -79,7 +79,13 @@ python3 tools/build_db.py --mcpdict-dir ../MCPDict-master/tools/tables
 
 ● 所有參與湖南及周邊方言字表整理的貢獻者
 
-## 九、授權
+## 九、參考資料
+
+● [原始道江寧方言](https://zhuanlan.zhihu.com/p/686223099)
+
+● [道江寧方言的語音特徵](https://zhuanlan.zhihu.com/p/695848698)
+
+## 十、授權
 
 本應用採用 MIT 授權，資料庫內容的版權歸漢字音典項目及 respective 字表貢獻者所有。
 

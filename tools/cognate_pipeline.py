@@ -262,11 +262,12 @@ def load_manual_overrides(output_path):
     try:
         conn = sqlite3.connect(output_path)
         c = conn.cursor()
-        c.execute("SELECT chars, lang, ipa, cognate_group, note FROM cognate_manual")
+        c.execute("SELECT chars, lang, ipa, cognate_group, note, semantic_tag, semantic_label FROM cognate_manual")
         rows = c.fetchall()
         conn.close()
         return [{"chars": r[0] or "", "lang": r[1] or "", "ipa": r[2] or "",
-                 "cognate_group": r[3], "note": r[4] or ""} for r in rows]
+                 "cognate_group": r[3], "note": r[4] or "",
+                 "semantic_tag": r[5] or "", "semantic_label": r[6] or ""} for r in rows]
     except Exception:
         return []
 
@@ -296,12 +297,16 @@ def apply_manual_overrides(conn, overrides, db_path):
         else:
             init, final, tcat = "", "", ""
 
-        # Derive semantic_tag and semantic_label from cognate_group name
-        tag = ov["cognate_group"].split("_")[0] if "_" in ov["cognate_group"] else ov["cognate_group"]
-        label_map = {**SEMANTIC_LABELS, "HIDE": "躲藏/捉迷藏", "ATTACH": "附着",
-                     "WRAP": "包覆", "COVER": "蓋上", "OVERLAY": "疊加",
-                     "DIVINEANSWER": "聖筊"}
-        label = label_map.get(tag, tag)
+        # Use semantic_tag/label from manual override if available
+        tag = ov.get("semantic_tag", "")
+        label = ov.get("semantic_label", "")
+        if not tag:
+            tag = ov["cognate_group"].split("_")[0] if "_" in ov["cognate_group"] else ov["cognate_group"]
+        if not label:
+            label_map = {**SEMANTIC_LABELS, "HIDE": "躲藏/捉迷藏", "ATTACH": "附着",
+                         "WRAP": "包覆", "COVER": "蓋上", "OVERLAY": "疊加",
+                         "DIVINEANSWER": "聖筊"}
+            label = label_map.get(tag, tag)
 
         # Get sort_key from siongdict.db if possible
         sort_key = ""
@@ -434,7 +439,9 @@ def build_cognates_db(db_path, output_path):
             ipa TEXT,
             cognate_group TEXT NOT NULL,
             note TEXT,
-            modified_at TEXT DEFAULT (datetime('now'))
+            modified_at TEXT DEFAULT (datetime('now')),
+            semantic_tag TEXT,
+            semantic_label TEXT
         )
     """)
 
@@ -474,8 +481,9 @@ def build_cognates_db(db_path, output_path):
     c.execute("DELETE FROM cognate_manual")
     for ov in overrides:
         c.execute(
-            "INSERT INTO cognate_manual (chars, lang, ipa, cognate_group, note) VALUES (?,?,?,?,?)",
-            (ov["chars"], ov["lang"], ov["ipa"], ov["cognate_group"], ov["note"])
+            "INSERT INTO cognate_manual (chars, lang, ipa, cognate_group, note, semantic_tag, semantic_label) VALUES (?,?,?,?,?,?,?)",
+            (ov["chars"], ov["lang"], ov["ipa"], ov["cognate_group"], ov["note"],
+             ov.get("semantic_tag", ""), ov.get("semantic_label", ""))
         )
     conn.commit()
 

@@ -31,7 +31,7 @@ INITIALS = [
     # Liquids and approximants
     r"l", r"r", r"ɻ", r"ɹ", r"w", r"ɰ",
     # Stops
-    r"p", r"t", r"k", r"b", r"d", r"g", r"ʔ",
+    r"p", r"t", r"k", r"b", r"d", r"g", r"ɡ", r"ʔ",
     # Voiced retroflex stops (MCPDict-specific)
     r"ȶ", r"ȡ",
 ]
