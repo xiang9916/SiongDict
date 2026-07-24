@@ -251,7 +251,119 @@ def cluster_cognates(entries, initial_chars, final_chars, tone_chars):
 
 # ─── Step 5: Build cognates.db ───
 
+def load_manual_overrides(output_path):
+    """Load cognate_manual table from existing cognates.db before rebuild.
+
+    Returns a list of dicts: {chars, lang, ipa, cognate_group, note}
+    Returns empty list if file doesn't exist or table is missing.
+    """
+    if not os.path.exists(output_path):
+        return []
+    try:
+        conn = sqlite3.connect(output_path)
+        c = conn.cursor()
+        c.execute("SELECT chars, lang, ipa, cognate_group, note FROM cognate_manual")
+        rows = c.fetchall()
+        conn.close()
+        return [{"chars": r[0] or "", "lang": r[1] or "", "ipa": r[2] or "",
+                 "cognate_group": r[3], "note": r[4] or ""} for r in rows]
+    except Exception:
+        return []
+
+
+def apply_manual_overrides(conn, overrides, db_path):
+    """Apply manual overrides on top of auto-generated cognate_auto table.
+
+    For each override:
+    - If an auto entry with matching (lang, ipa) exists, update its cognate_group.
+    - If no matching auto entry exists, insert a new row (manually added entry).
+    - Re-parse IPA for the new/updated entry to fill initial/final/tone_cat.
+
+    After applying all overrides, rebuild cognate_groups counts.
+    """
+    if not overrides:
+        print("  No manual overrides to apply.")
+        return
+
+    print(f"  Applying {len(overrides)} manual overrides...")
+    c = conn.cursor()
+
+    for ov in overrides:
+        ipa_parsed = parse_ipa(ov["ipa"])
+        if ipa_parsed:
+            init, final, tone = ipa_parsed[0]
+            tcat = get_tone_category(tone)
+        else:
+            init, final, tcat = "", "", ""
+
+        # Derive semantic_tag and semantic_label from cognate_group name
+        tag = ov["cognate_group"].split("_")[0] if "_" in ov["cognate_group"] else ov["cognate_group"]
+        label_map = {**SEMANTIC_LABELS, "HIDE": "躲藏/捉迷藏", "ATTACH": "附着",
+                     "WRAP": "包覆", "COVER": "蓋上", "OVERLAY": "疊加",
+                     "DIVINEANSWER": "聖筊"}
+        label = label_map.get(tag, tag)
+
+        # Get sort_key from siongdict.db if possible
+        sort_key = ""
+        try:
+            sconn = sqlite3.connect(db_path)
+            sc = sconn.cursor()
+            sc.execute("SELECT 排序 FROM langs WHERE 語言 = ? AND 讀音 = ? LIMIT 1",
+                       (ov["lang"], ov["ipa"]))
+            row = sc.fetchone()
+            if row:
+                sort_key = row[0] or ""
+            sconn.close()
+        except Exception:
+            pass
+
+        # Check if auto entry exists
+        c.execute("SELECT id FROM cognate_auto WHERE lang = ? AND ipa = ? LIMIT 1",
+                  (ov["lang"], ov["ipa"]))
+        existing = c.fetchone()
+
+        if existing:
+            c.execute(
+                "UPDATE cognate_auto SET cognate_group = ?, semantic_tag = ?, semantic_label = ?, chars = ?, note = ? WHERE id = ?",
+                (ov["cognate_group"], tag, label, ov["chars"], ov["note"], existing[0])
+            )
+        else:
+            c.execute(
+                "INSERT INTO cognate_auto (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (ov["cognate_group"], tag, label, ov["chars"], ov["lang"], ov["ipa"],
+                 ov["note"], sort_key, init, final, tcat)
+            )
+
+    conn.commit()
+
+    # Rebuild cognate_groups from cognate_auto
+    c.execute("DELETE FROM cognate_groups")
+    c.execute("""
+        INSERT INTO cognate_groups (cognate_group, semantic_tag, semantic_label, member_count, dialect_count)
+        SELECT cognate_group,
+               MAX(semantic_tag) as semantic_tag,
+               MAX(semantic_label) as semantic_label,
+               COUNT(*) as member_count,
+               COUNT(DISTINCT lang) as dialect_count
+        FROM cognate_auto
+        GROUP BY cognate_group
+    """)
+    conn.commit()
+
+    # Show override summary
+    c.execute("SELECT cognate_group, COUNT(*) FROM cognate_auto GROUP BY cognate_group ORDER BY cognate_group")
+    groups = c.fetchall()
+    print(f"  After overrides: {len(groups)} cognate groups")
+    for gid, count in groups:
+        print(f"    {gid}: {count}")
+
+
 def build_cognates_db(db_path, output_path):
+    # Step 0: Backup manual overrides before destroying the file
+    print("Step 0: Backing up manual overrides...")
+    overrides = load_manual_overrides(output_path)
+    print(f"  Found {len(overrides)} manual override entries")
+
     if os.path.exists(output_path):
         os.remove(output_path)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -353,13 +465,39 @@ def build_cognates_db(db_path, output_path):
     for gid, (tag, label, mc, dc) in group_meta.items():
         c.execute("INSERT INTO cognate_groups VALUES (?,?,?,?,?)", (gid, tag, label, mc, dc))
 
+    # Step 5: Apply manual overrides
+    print("Step 5: Applying manual overrides...")
+    apply_manual_overrides(conn, overrides, db_path)
+
+    # Step 6: Restore manual overrides table
+    print("Step 6: Restoring manual overrides table...")
+    c.execute("DELETE FROM cognate_manual")
+    for ov in overrides:
+        c.execute(
+            "INSERT INTO cognate_manual (chars, lang, ipa, cognate_group, note) VALUES (?,?,?,?,?)",
+            (ov["chars"], ov["lang"], ov["ipa"], ov["cognate_group"], ov["note"])
+        )
+    conn.commit()
+
     c.execute("PRAGMA user_version = 2")
     conn.commit()
     conn.close()
 
+    # Recount final stats
+    conn2 = sqlite3.connect(output_path)
+    c2 = conn2.cursor()
+    c2.execute("SELECT COUNT(*) FROM cognate_auto")
+    total = c2.fetchone()[0]
+    c2.execute("SELECT COUNT(*) FROM cognate_groups")
+    groups = c2.fetchone()[0]
+    c2.execute("SELECT COUNT(*) FROM cognate_manual")
+    manual_count = c2.fetchone()[0]
+    conn2.close()
+
     print(f"\nCognates database built: {output_path}")
-    print(f"  Auto entries: {inserted}")
-    print(f"  Cognate groups: {len(group_meta)}")
+    print(f"  Total entries: {total}")
+    print(f"  Cognate groups: {groups}")
+    print(f"  Manual overrides: {manual_count}")
     print(f"  DB size: {os.path.getsize(output_path) / 1024:.1f} KB")
 
 

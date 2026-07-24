@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -45,7 +46,8 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var showResetDialog by remember { mutableStateOf(false) }
+   var showResetDialog by remember { mutableStateOf(false) }
+   var showFilterMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -53,6 +55,75 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                 TopAppBar(
                     title = { Text("湘典", fontWeight = FontWeight.Bold) },
                     actions = {
+                        IconButton(onClick = { showFilterMenu = true }) {
+                            Icon(
+                                Icons.Default.Visibility,
+                                contentDescription = "方言篩選",
+                                tint = Color.White
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Checkbox(
+                                            checked = uiState.filterXiangGan,
+                                            onCheckedChange = {
+                                                viewModel.updateFilters(
+                                                    it, uiState.filterZhongShangJiang, uiState.filterXiangHuaTuHua
+                                                )
+                                            }
+                                        )
+                                        Text("湘贛")
+                                    }
+                                },
+                                onClick = {}
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Checkbox(
+                                            checked = uiState.filterZhongShangJiang,
+                                            onCheckedChange = {
+                                                viewModel.updateFilters(
+                                                    uiState.filterXiangGan, it, uiState.filterXiangHuaTuHua
+                                                )
+                                            }
+                                        )
+                                        Text("中上江和藍青")
+                                    }
+                                },
+                                onClick = {}
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Checkbox(
+                                            checked = uiState.filterXiangHuaTuHua,
+                                            onCheckedChange = {
+                                                viewModel.updateFilters(
+                                                    uiState.filterXiangGan, uiState.filterZhongShangJiang, it
+                                                )
+                                            }
+                                        )
+                                        Text("鄉話和土話")
+                                    }
+                                },
+                                onClick = {}
+                            )
+                        }
                         IconButton(onClick = { showResetDialog = true }) {
                             Icon(
                                 Icons.Default.Refresh,
@@ -82,7 +153,13 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-               placeholder = { Text("輸入漢字、同源詞或釋義") },
+               placeholder = {
+                   Text(when (uiState.mode) {
+                       SearchMode.CHAR -> "輸入漢字檢索"
+                       SearchMode.COGNATE -> "輸入中英義項或構擬祖型檢索"
+                       SearchMode.MEANING -> "輸入注釋內容匹配檢索"
+                   })
+               },
                 trailingIcon = {
                     if (uiState.query.isNotEmpty()) {
                         IconButton(onClick = { viewModel.updateQuery("") }) {
@@ -297,12 +374,35 @@ private fun ResultCard(group: CharGroup) {
                 }
             }
             if (group.subtitle.isNotBlank()) {
-                Text(
-                    text = group.subtitle,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = group.subtitle,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    val context = LocalContext.current
+                    val clipboardManager = LocalClipboardManager.current
+                    IconButton(
+                        onClick = {
+                            val exportText = buildCharGroupExportText(group)
+                            clipboardManager.setText(AnnotatedString(exportText))
+                            Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "複製同源詞",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
             }
 
             // 各方言点读音
