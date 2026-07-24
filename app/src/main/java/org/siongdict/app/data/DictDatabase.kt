@@ -142,11 +142,37 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         super.onConfigure(db)
     }
 
-    fun getVariants(ch: String): List<String> {
-        if (variantMap == null) {
-            loadVariants()
+   fun getVariants(ch: String): List<String> {
+       if (variantMap == null) {
+           loadVariants()
+       }
+       return variantMap?.get(ch) ?: listOf(ch)
+   }
+
+    /**
+     * Expand a multi-character query into all simplified/traditional/variant
+     * combinations via the cartesian product of per-character variants.
+     * Returns just [query] when the combination count would be too large.
+     */
+    fun expandQueryVariants(query: String): List<String> {
+        if (query.isEmpty()) return listOf(query)
+        val charVariants = query.map { ch -> getVariants(ch.toString()) }
+        val totalCombos = charVariants.fold(1) { acc, list -> acc * list.size }
+        if (totalCombos > 64) return listOf(query)
+        val results = mutableListOf<String>()
+        fun generate(index: Int, current: StringBuilder) {
+            if (index == charVariants.size) {
+                results.add(current.toString())
+                return
+            }
+            for (variant in charVariants[index]) {
+                current.append(variant)
+                generate(index + 1, current)
+                current.setLength(current.length - variant.length)
+            }
         }
-        return variantMap?.get(ch) ?: listOf(ch)
+        generate(0, StringBuilder())
+        return results
     }
 
     private fun loadVariants() {
@@ -214,26 +240,34 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         return results
     }
 
-    fun searchByMeaning(keyword: String): List<SearchResult> {
-        val db = readableDatabase
-        val results = mutableListOf<SearchResult>()
-        val cursor = db.rawQuery(
-            "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 註釋 MATCH ? ORDER BY 排序 LIMIT 200",
-            arrayOf(keyword)
-        )
-        cursor.use {
-            while (it.moveToNext()) {
-                results.add(SearchResult(
-                    chars = it.getString(0),
-                    lang = it.getString(1),
-                    ipa = it.getString(2),
-                    note = it.getString(3) ?: "",
-                    sortKey = it.getString(4) ?: ""
-                ))
-            }
-        }
-        return results
-    }
+   fun searchByMeaning(keyword: String): List<SearchResult> {
+       val db = readableDatabase
+       val allResults = mutableListOf<SearchResult>()
+       val seen = mutableSetOf<String>()
+       for (v in expandQueryVariants(keyword)) {
+           val cursor = db.rawQuery(
+               "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 註釋 MATCH ? ORDER BY 排序 LIMIT 200",
+               arrayOf(v)
+           )
+           cursor.use {
+               while (it.moveToNext()) {
+                   val result = SearchResult(
+                       chars = it.getString(0),
+                       lang = it.getString(1),
+                       ipa = it.getString(2),
+                       note = it.getString(3) ?: "",
+                       sortKey = it.getString(4) ?: ""
+                   )
+                   val key = "${result.chars}|${result.lang}|${result.ipa}|${result.note}"
+                   if (key !in seen) {
+                       seen.add(key)
+                       allResults.add(result)
+                   }
+               }
+           }
+       }
+       return allResults
+   }
 
     fun getCognateGroup(lang: String, ipa: String): CognateGroup? {
         val cogDb = openCognateDb() ?: return null
@@ -274,19 +308,21 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         }
     }
 
-    fun searchCognates(query: String): List<CognateGroup> {
-        val cogDb = openCognateDb() ?: return emptyList()
-        try {
-            val cursor = cogDb.rawQuery(
-                "SELECT DISTINCT cognate_group FROM cognate_auto WHERE cognate_group LIKE ? OR ipa LIKE ? OR semantic_label LIKE ?",
-                arrayOf("%$query%", "%$query%", "%$query%")
-            )
-            val groupIds = mutableListOf<String>()
-            cursor.use {
-                while (it.moveToNext()) {
-                    groupIds.add(it.getString(0))
-                }
-            }
+   fun searchCognates(query: String): List<CognateGroup> {
+       val cogDb = openCognateDb() ?: return emptyList()
+       try {
+           val groupIds = mutableSetOf<String>()
+           for (v in expandQueryVariants(query)) {
+               val cursor = cogDb.rawQuery(
+                   "SELECT DISTINCT cognate_group FROM cognate_auto WHERE cognate_group LIKE ? OR ipa LIKE ? OR semantic_label LIKE ?",
+                   arrayOf("%$v%", "%$v%", "%$v%")
+               )
+               cursor.use {
+                   while (it.moveToNext()) {
+                       groupIds.add(it.getString(0))
+                   }
+               }
+           }
 
             val results = mutableListOf<CognateGroup>()
             for (gid in groupIds) {
