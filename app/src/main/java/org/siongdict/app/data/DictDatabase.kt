@@ -12,10 +12,58 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
 ) {
     companion object {
         private const val TAG = "DictDatabase"
-        private const val DB_VERSION = 2
+        private const val DB_VERSION = 3
         private const val DB_NAME = "siongdict.db"
         private const val COG_NAME = "cognates.db"
         private var variantMap: Map<String, List<String>>? = null
+    }
+
+    private var toneSystemCache: Map<String, JSONObject>? = null
+
+    private var divisionCache: Map<String, String>? = null
+
+    fun getDialectDivision(jc: String): String {
+        val cache = divisionCache
+        if (cache != null) return cache[jc] ?: ""
+        val map = mutableMapOf<String, String>()
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT 簡稱, 音典分區 FROM info", null)
+        cursor.use {
+            while (it.moveToNext()) {
+                val name = it.getString(0) ?: ""
+                val div = it.getString(1) ?: ""
+                map[name] = div
+            }
+        }
+        divisionCache = map
+        return map[jc] ?: ""
+    }
+
+    fun getToneSystem(jc: String): JSONObject? {
+        val cache = toneSystemCache
+        if (cache != null) return cache[jc]
+        // Load all tone systems on first access
+        val map = mutableMapOf<String, JSONObject>()
+        val db = readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT 簡稱, 聲調 FROM info", null
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                val name = it.getString(0)
+                val jsonStr = it.getString(1) ?: ""
+                if (jsonStr.isNotEmpty()) {
+                    try {
+                        map[name] = JSONObject(jsonStr)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse tone system for $name", e)
+                    }
+                }
+            }
+        }
+        toneSystemCache = map
+        Log.i(TAG, "Loaded tone systems for ${map.size} dialects")
+        return map[jc]
     }
 
     init {
@@ -81,6 +129,8 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         }
         copyDatabase()
         copyCognateDatabase()
+        toneSystemCache = null
+        divisionCache = null
         Log.i(TAG, "Force reset complete")
     }
 

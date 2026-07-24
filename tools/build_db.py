@@ -18,12 +18,15 @@ from collections import defaultdict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MCPDICT_DIR = os.path.normpath(
-    os.path.join(SCRIPT_DIR, "..", "..", "MCPDict-master", "tools", "tables")
+    os.path.join(SCRIPT_DIR, "..", "..", "MCPDict-new", "tools", "tables")
 )
 DEFAULT_OUTPUT = os.path.normpath(
     os.path.join(SCRIPT_DIR, "..", "app", "src", "main", "assets", "databases", "siongdict.db")
 )
 
+# ─── Filtering ───
+
+# Condition 1: match any of these 音典分區 keywords, or 湘語 in 地圖集二分區
 FQ_KEYWORDS = [
     "湘語",
     "湘贛－岳州",
@@ -33,18 +36,7 @@ FQ_KEYWORDS = [
     "湘贛－南湘",
     "湘南",
     "道州",
-]
-
-GEO_EXACT = [
-    ("湖南", None, None),
-    ("廣西", "桂林", "資源"),
-    ("廣西", "桂林", "全州"),
-    ("廣西", "桂林", "興安"),
-    ("廣西", "桂林", "灌陽"),
-    ("湖北", "咸寧", "赤壁"),
-    ("湖北", "咸寧", "崇陽"),
-    ("湖北", "咸寧", "嘉魚"),
-    ("湖北", "咸寧", "通城"),
+    "鄉話",
 ]
 
 
@@ -61,16 +53,45 @@ def matches_fq(d):
 
 def matches_geo(d):
     prov = d.get("省", "").strip("*")
-    city = d.get("市", "")
-    county = d.get("縣", "")
-    for p, c, co in GEO_EXACT:
-        if p == "湖南":
-            if prov == "湖南":
-                return True
-        else:
-            if prov == p and city == c and county == co:
-                return True
-    return False
+    return prov == "湖南"
+
+
+# ─── Sorting ───
+
+# Major division ordering: lower = earlier
+DIVISION_ORDER = [
+    "湘贛－岳州",
+    "湘贛－北湘",
+    "湘贛－雪峰",
+    "湘贛－南湘",
+    "湘贛－羅霄",
+    "中上江",
+    "藍青",
+    "鄉話",
+    "道州",
+    "湘南",
+]
+
+
+def get_division_rank(yd_division):
+    """Return a sort rank for the major division. Lower = earlier.
+    Dialects not matching any known division go last.
+    """
+    for i, prefix in enumerate(DIVISION_ORDER):
+        if prefix in yd_division:
+            return i
+    return len(DIVISION_ORDER)
+
+
+def make_sort_key(meta):
+    """Build a composite sort key that orders by (division rank, 音典排序).
+
+    Format: f"{rank:02d}_{yd_sort}" so string sorting gives the desired order.
+    """
+    yd_div = meta.get("音典分區", "")
+    yd_sort = meta.get("音典排序", "")
+    rank = get_division_rank(yd_div)
+    return f"{rank:02d}_{yd_sort}"
 
 
 def load_metadata(mcpdict_dir):
@@ -87,6 +108,21 @@ def filter_dialects(metadata):
         if matches_fq(val) or matches_geo(val):
             matched[key] = val
     return matched
+
+
+def sort_dialects(dialects):
+    """Sort dialects by (major division rank, 音典排序).
+
+    Within each major division, dialects are sorted by their 音典排序 string.
+    """
+    def sort_key(item):
+        簡稱, meta = item
+        yd_div = meta.get("音典分區", "")
+        rank = get_division_rank(yd_div)
+        yd_sort = meta.get("音典排序", "")
+        return (rank, yd_sort, 簡稱)
+
+    return dict(sorted(dialects.items(), key=sort_key))
 
 
 def read_tsv(mcpdict_dir, 簡稱):
@@ -151,7 +187,7 @@ def build_database(mcpdict_dir, output_path, dialects):
     total_chars = 0
     skipped = 0
 
-    for 簡稱, meta in sorted(dialects.items()):
+    for 簡稱, meta in dialects.items():
         entries = read_tsv(mcpdict_dir, 簡稱)
         if not entries:
             skipped += 1
@@ -164,7 +200,7 @@ def build_database(mcpdict_dir, output_path, dialects):
 
         for (音, 註), chars in groups.items():
             字組 = " ".join(chars)
-            items.append((字組, 簡稱, 音, 註, meta.get("音典排序", "")))
+            items.append((字組, 簡稱, 音, 註, make_sort_key(meta)))
 
         total_chars += len(entries)
 
@@ -196,7 +232,7 @@ def build_database(mcpdict_dir, output_path, dialects):
         c.executemany(f"INSERT INTO info VALUES ({placeholders})", info_rows)
 
     conn.commit()
-    c.execute("PRAGMA user_version = 2")
+    c.execute("PRAGMA user_version = 3")
     conn.commit()
     conn.close()
 
@@ -225,6 +261,18 @@ def main():
     dialects = filter_dialects(metadata)
     print(f"Matched Xiang dialects: {len(dialects)}")
 
+    # Show division breakdown
+    div_counts = defaultdict(int)
+    for meta in dialects.values():
+        yd = meta.get("音典分區", "")
+        rank = get_division_rank(yd)
+        div_name = DIVISION_ORDER[rank] if rank < len(DIVISION_ORDER) else "其他"
+        div_counts[div_name] += 1
+    for div in DIVISION_ORDER + ["其他"]:
+        if div in div_counts:
+            print(f"  {div}: {div_counts[div]}")
+
+    dialects = sort_dialects(dialects)
     build_database(args.mcpdict_dir, args.output, dialects)
 
 

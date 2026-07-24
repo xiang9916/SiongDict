@@ -20,7 +20,7 @@ private val SiongCrimson = Color(0xFFDC143C)
 
 private val LightColors = lightColorScheme(
     primary = SiongDarkRed,
-    background = Color(0xFFFFFEF0),
+    background = Color(0xFFF2EEE6),
 )
 
 private val DarkColors = darkColorScheme(
