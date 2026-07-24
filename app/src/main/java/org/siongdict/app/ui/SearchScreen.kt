@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -15,6 +17,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,11 +37,14 @@ import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.DialectEntry
 import org.siongdict.app.data.CognateGroup
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     var showResetDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -141,16 +147,58 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(uiState.results) { group ->
-                        ResultCard(group)
+                Row(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        itemsIndexed(
+                            uiState.results,
+                            key = { _, group -> "${group.chars}_${group.subtitle}" }
+                        ) { _, group ->
+                            ResultCard(group)
+                        }
+                    }
+                    if (uiState.results.size > 1) {
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.outlineVariant)
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .fillMaxHeight(),
+                            contentPadding = PaddingValues(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            itemsIndexed(
+                                uiState.results,
+                                key = { _, group -> "${group.chars}_${group.subtitle}" }
+                            ) { index, group ->
+                                val navText = group.chars.replace(" ", "").let {
+                                    if (it.length <= 2) it else it.take(2)
+                                }
+                                Text(
+                                    text = navText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(vertical = 2.dp)
+                                        .clickable {
+                                            scope.launch { listState.animateScrollToItem(index) }
+                                        }
+                                )
+                            }
+                        }
                     }
                 }
-           }
+            }
        }
     }
 
@@ -197,6 +245,7 @@ private fun ResetConfirmDialog(
 @Composable
 private fun ResultCard(group: CharGroup) {
     val displayChars = group.chars.replace(" ", "")
+    var collapsed by rememberSaveable { mutableStateOf(false) }
     val titleSize = when {
         displayChars.length <= 2 -> 28.sp
         displayChars.length <= 4 -> 22.sp
@@ -229,11 +278,22 @@ private fun ResultCard(group: CharGroup) {
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 if (group.entries.size > 1) {
-                    Text(
-                        text = "${group.entries.size} 點",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.clickable { collapsed = !collapsed },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "${group.entries.size} 點",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = if (collapsed) "＞" else "∨",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             if (group.subtitle.isNotBlank()) {
@@ -246,8 +306,10 @@ private fun ResultCard(group: CharGroup) {
             }
 
             // 各方言点读音
-            group.entries.forEach { dialect ->
-                DialectBlock(dialect)
+            if (!collapsed) {
+                group.entries.forEach { dialect ->
+                    DialectBlock(dialect)
+                }
             }
         }
     }
@@ -255,7 +317,7 @@ private fun ResultCard(group: CharGroup) {
 
 @Composable
 private fun DialectBlock(dialect: DialectEntry) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
