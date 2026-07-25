@@ -25,6 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -446,7 +450,6 @@ private fun DialectBlock(dialect: DialectEntry) {
            Text(
                text = dialect.lang,
                fontSize = 14.sp,
-                lineHeight = 16.sp,
                fontWeight = FontWeight.Medium,
                color = MaterialTheme.colorScheme.primary
            )
@@ -464,28 +467,32 @@ private fun DialectBlock(dialect: DialectEntry) {
         }
         // 读音行：IPA 左、註釋右
         dialect.prons.forEach { p ->
-            Row(
+            Text(
+                text = buildAnnotatedString {
+                    withStyle(SpanStyle(
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )) {
+                        append(p.ipa)
+                    }
+                    if (p.note.isNotBlank()) {
+                        withStyle(SpanStyle(
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )) {
+                            append(" ${p.note}")
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-               Text(
-                   text = p.ipa,
-                   fontSize = 15.sp,
-                    lineHeight = 17.sp,
-                   fontFamily = FontFamily.Monospace,
-                   color = MaterialTheme.colorScheme.onSurface
-               )
-               Text(
-                   text = p.note,
-                   fontSize = 13.sp,
-                    lineHeight = 15.sp,
-                   color = MaterialTheme.colorScheme.onSurfaceVariant,
-                   modifier = Modifier.weight(1f)
-               )
-            }
+                    .padding(start = 14.dp)
+            )
+            Text(
+                text = "\n",
+                modifier = Modifier.height(0.dp).clipToBounds()
+            )
         }
         // 同源词展开
         if (expanded && dialect.cognate != null) {
@@ -521,7 +528,6 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
               Text(
                   text = headerText,
                   fontSize = 12.sp,
-                   lineHeight = 14.sp,
                   color = MaterialTheme.colorScheme.tertiary,
                   fontWeight = FontWeight.Medium,
                   modifier = Modifier.weight(1f)
@@ -544,6 +550,10 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                }
                 }
             }
+            Text(
+                text = "\n",
+                modifier = Modifier.height(0.dp).clipToBounds()
+            )
             group.members.forEach { m ->
                 val isCurrent = m.lang == currentLang
                 Row(
@@ -562,13 +572,16 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                    Text(
                        text = m.ipa,
                        fontSize = 13.sp,
-                        lineHeight = 15.sp,
                        fontFamily = FontFamily.Monospace,
                        color = if (isCurrent) MaterialTheme.colorScheme.onSurface
                                else MaterialTheme.colorScheme.onSurfaceVariant
                    )
                 }
+                Text(
+                    text = "\n",
+                    modifier = Modifier.height(0.dp).clipToBounds()
+                )
+                }
             }
         }
     }
-}
