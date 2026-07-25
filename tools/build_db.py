@@ -65,6 +65,7 @@ DIVISION_ORDER = [
     "湘贛－雪峰",
     "湘贛－南湘",
     "湘贛－羅霄",
+    "湘贛",            # 湘贛（其他）: catch-all for 湘贛 sub-divisions not named above
     "中上江",
     "藍青",
     "鄉話",
@@ -72,13 +73,24 @@ DIVISION_ORDER = [
     "湘南",
 ]
 
+XIANGAN_OTHER_RANK = 5  # index of "湘贛" catch-all in DIVISION_ORDER
 
-def get_division_rank(yd_division):
+DIVISION_DISPLAY = [
+    "湘贛－岳州", "湘贛－北湘", "湘贛－雪峰", "湘贛－南湘",
+    "湘贛－羅霄", "湘贛（其他）",
+    "中上江", "藍青", "鄉話", "道州", "湘南", "其他",
+]
+
+
+def get_division_rank(meta):
     """Return a sort rank for the major division. Lower = earlier.
     Dialects not matching any known division go last.
+
+    Accepts the full metadata dict (uses 音典分區 only).
     """
+    yd_div = meta.get("音典分區", "") if isinstance(meta, dict) else meta
     for i, prefix in enumerate(DIVISION_ORDER):
-        if prefix in yd_division:
+        if prefix in yd_div:
             return i
     return len(DIVISION_ORDER)
 
@@ -88,9 +100,8 @@ def make_sort_key(meta):
 
     Format: f"{rank:02d}_{yd_sort}" so string sorting gives the desired order.
     """
-    yd_div = meta.get("音典分區", "")
     yd_sort = meta.get("音典排序", "")
-    rank = get_division_rank(yd_div)
+    rank = get_division_rank(meta)
     return f"{rank:02d}_{yd_sort}"
 
 
@@ -117,8 +128,7 @@ def sort_dialects(dialects):
     """
     def sort_key(item):
         簡稱, meta = item
-        yd_div = meta.get("音典分區", "")
-        rank = get_division_rank(yd_div)
+        rank = get_division_rank(meta)
         yd_sort = meta.get("音典排序", "")
         return (rank, yd_sort, 簡稱)
 
@@ -140,6 +150,8 @@ def read_tsv(mcpdict_dir, 簡稱):
                 continue
             字 = parts[0]
             音 = parts[1]
+            # Strip tone modifiers (-/=) from end of reading
+            音 = re.sub(r"[-=]+$", "", 音)
             註 = parts[2] if len(parts) > 2 else ""
             if not 字 or not 音:
                 continue
@@ -264,11 +276,15 @@ def main():
     # Show division breakdown
     div_counts = defaultdict(int)
     for meta in dialects.values():
-        yd = meta.get("音典分區", "")
-        rank = get_division_rank(yd)
-        div_name = DIVISION_ORDER[rank] if rank < len(DIVISION_ORDER) else "其他"
+        rank = get_division_rank(meta)
+        if rank == XIANGAN_OTHER_RANK:
+            div_name = "湘贛（其他）"
+        elif rank < len(DIVISION_ORDER):
+            div_name = DIVISION_ORDER[rank]
+        else:
+            div_name = "其他"
         div_counts[div_name] += 1
-    for div in DIVISION_ORDER + ["其他"]:
+    for div in DIVISION_DISPLAY:
         if div in div_counts:
             print(f"  {div}: {div_counts[div]}")
 

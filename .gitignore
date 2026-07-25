@@ -19,7 +19,6 @@ dist/
 *.pyc
 *.zip
 __pycache__
-揚州同音字表*.tsv
 *.cxx
 info.html
 sim.html

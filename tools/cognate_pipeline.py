@@ -265,7 +265,7 @@ def load_manual_overrides(output_path):
         c.execute("SELECT chars, lang, ipa, cognate_group, note, semantic_tag, semantic_label FROM cognate_manual")
         rows = c.fetchall()
         conn.close()
-        return [{"chars": r[0] or "", "lang": r[1] or "", "ipa": r[2] or "",
+        return [{"chars": r[0] or "", "lang": r[1] or "", "ipa": re.sub(r"[-=]+$", "", r[2] or ""),
                  "cognate_group": r[3], "note": r[4] or "",
                  "semantic_tag": r[5] or "", "semantic_label": r[6] or ""} for r in rows]
     except Exception:
@@ -290,7 +290,7 @@ def apply_manual_overrides(conn, overrides, db_path):
     c = conn.cursor()
 
     for ov in overrides:
-        ipa_parsed = parse_ipa(ov["ipa"])
+        ipa_parsed = parse_ipa(re.sub(r"[-=]+$", "", ov["ipa"]))
         if ipa_parsed:
             init, final, tone = ipa_parsed[0]
             tcat = get_tone_category(tone)

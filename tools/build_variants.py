@@ -36,7 +36,9 @@ def build_variants():
                 continue
             src = parts[0].strip()
             # Remove inline comments and split variants
-            dst_raw = parts[1].split("#")[0].strip()
+            # '#' separates variant categories (e.g. "骂  駡 #罵"), not a comment.
+            # Treat it as a whitespace separator so all variant forms are captured.
+            dst_raw = parts[1].replace("#", " ").strip()
             dsts = dst_raw.split()
             if not src or not dsts:
                 continue

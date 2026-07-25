@@ -14,7 +14,7 @@ import java.util.regex.Pattern
 object ToneFormatter {
 
     // Regex: group 1 = syllable (non-digit prefix), group 2 = tone category
-    private val pattern = Pattern.compile("^(.+?)([0-9]{1,2}[a-z=]?)$")
+    private val pattern = Pattern.compile("^(.+?)([0-9]{1,2}[a-z=-]?)$")
 
     // Unicode tone bar characters for digits 0-6
     private val toneBars = charArrayOf(
@@ -61,31 +61,40 @@ object ToneFormatter {
         val matcher = pattern.matcher(ipa)
         if (!matcher.matches()) return ipa
 
-        val base = matcher.group(1)
+        val base = matcher.group(1) ?: return ipa
         val tone = matcher.group(2)
         if (tone.isNullOrEmpty()) return ipa
 
+        // Separate tone digit from suffix (-/=) for correct tone system lookup
+        val toneDigit = tone.replace(Regex("[^0-9]"), "")
+        val toneSuffix = tone!!.replace(Regex("[0-9]"), "")
+
         // Look up the tone category in the tone system JSON
         val styles = try {
-            toneSystem.optJSONArray(tone)
+            var arr = toneSystem.optJSONArray(toneDigit)
+            // If not found by digit alone, try full key (e.g., "2a" for 湘鄉)
+            if (arr == null && toneSuffix.isNotEmpty()) {
+                arr = toneSystem.optJSONArray(tone)
+            }
+            arr
         } catch (e: Exception) {
             null
         }
 
         // If not found in the tone system, fall back to raw IPA
         if (styles == null || styles.length() != 5) {
-            if (tone == "0") return base
-            return base + tone
+            if (toneDigit == "0") return base
+            return base + toneDigit + toneSuffix
         }
 
         // styles[0] = tone value (e.g. "334")
         val tv = styles.optString(0, "")
         if (tv.isEmpty()) {
-            if (tone == "0") return base
-            return base + tone
+            if (toneDigit == "0") return base
+            return base + toneDigit + toneSuffix
         }
 
         val contour = toneValueToContour(tv)
-        return base + contour + tone
+        return base + contour + toneDigit + toneSuffix
     }
 }

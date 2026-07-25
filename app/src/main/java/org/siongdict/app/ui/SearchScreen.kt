@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
@@ -335,26 +337,28 @@ private fun ResultCard(group: CharGroup) {
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = RoundedCornerShape(8.dp)
-    ) {
+   ) {
+        SelectionContainer {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-           // 字組标题 + 方言数
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Text(
-                    text = displayChars,
-                    fontSize = titleSize,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (group.entries.size > 1) {
+               .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+       ) {
+         // 字組标题 + 方言数
+           Row(
+               modifier = Modifier.fillMaxWidth(),
+               horizontalArrangement = Arrangement.SpaceBetween,
+               verticalAlignment = Alignment.Bottom
+           ) {
+               Text(
+                   text = displayChars,
+                   fontSize = titleSize,
+                   fontWeight = FontWeight.Bold,
+                   color = MaterialTheme.colorScheme.onSurface
+               )
+               if (group.entries.size > 1) {
+                    DisableSelection {
                     Row(
                         modifier = Modifier.clickable { collapsed = !collapsed },
                         verticalAlignment = Alignment.CenterVertically,
@@ -371,6 +375,7 @@ private fun ResultCard(group: CharGroup) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    }
                 }
             }
             if (group.subtitle.isNotBlank()) {
@@ -385,8 +390,9 @@ private fun ResultCard(group: CharGroup) {
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.weight(1f)
                     )
-                    val context = LocalContext.current
-                    val clipboardManager = LocalClipboardManager.current
+                   val context = LocalContext.current
+                   val clipboardManager = LocalClipboardManager.current
+                    DisableSelection {
                     IconButton(
                         onClick = {
                             val exportText = buildCharGroupExportText(group)
@@ -402,15 +408,17 @@ private fun ResultCard(group: CharGroup) {
                             tint = MaterialTheme.colorScheme.tertiary
                         )
                     }
+                    }
                 }
             }
 
-            // 各方言点读音
-            if (!collapsed) {
-                group.entries.forEach { dialect ->
-                    DialectBlock(dialect)
-                }
-            }
+           // 各方言点读音
+           if (!collapsed) {
+               group.entries.forEach { dialect ->
+                   DialectBlock(dialect)
+               }
+           }
+        }
         }
     }
 }
@@ -418,38 +426,41 @@ private fun ResultCard(group: CharGroup) {
 @Composable
 private fun DialectBlock(dialect: DialectEntry) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(1.dp)
-    ) {
-        // 方言名行
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-            )
-            Text(
-                text = dialect.lang,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            if (dialect.cognate != null && dialect.cognate.members.size > 1) {
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "同源 ${dialect.cognate.members.size} 詞",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.clickable { expanded = !expanded }
-                )
-            }
+   Column(
+       modifier = Modifier
+           .fillMaxWidth()
+            .padding(top = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
+   ) {
+       // 方言名行
+       Row(
+           verticalAlignment = Alignment.CenterVertically,
+           horizontalArrangement = Arrangement.spacedBy(6.dp)
+       ) {
+           Box(
+               modifier = Modifier
+                   .size(6.dp)
+                   .clip(RoundedCornerShape(3.dp))
+                   .background(MaterialTheme.colorScheme.primary)
+           )
+           Text(
+               text = dialect.lang,
+               fontSize = 14.sp,
+                lineHeight = 16.sp,
+               fontWeight = FontWeight.Medium,
+               color = MaterialTheme.colorScheme.primary
+           )
+           if (dialect.cognate != null && dialect.cognate.members.size > 1) {
+               Spacer(modifier = Modifier.weight(1f))
+                DisableSelection {
+               Text(
+                   text = "同源 ${dialect.cognate.members.size} 詞",
+                   fontSize = 11.sp,
+                   color = MaterialTheme.colorScheme.tertiary,
+                   modifier = Modifier.clickable { expanded = !expanded }
+               )
+                }
+           }
         }
         // 读音行：IPA 左、註釋右
         dialect.prons.forEach { p ->
@@ -460,18 +471,20 @@ private fun DialectBlock(dialect: DialectEntry) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.Top
             ) {
-                Text(
-                    text = p.ipa,
-                    fontSize = 15.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = p.note,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
+               Text(
+                   text = p.ipa,
+                   fontSize = 15.sp,
+                    lineHeight = 17.sp,
+                   fontFamily = FontFamily.Monospace,
+                   color = MaterialTheme.colorScheme.onSurface
+               )
+               Text(
+                   text = p.note,
+                   fontSize = 13.sp,
+                    lineHeight = 15.sp,
+                   color = MaterialTheme.colorScheme.onSurfaceVariant,
+                   modifier = Modifier.weight(1f)
+               )
             }
         }
         // 同源词展开
@@ -490,42 +503,45 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         shape = RoundedCornerShape(6.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            val context = LocalContext.current
-            val clipboardManager = LocalClipboardManager.current
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val headerText = if (group.semanticLabel.isNotBlank()) {
-                    "義類：${group.semanticLabel} ${group.groupId}"
-                } else {
-                    group.groupId
-                }
-                Text(
-                    text = headerText,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = {
-                        val exportText = buildCognateExportText(group)
-                        clipboardManager.setText(AnnotatedString(exportText))
-                        Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "複製同源詞",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.tertiary
-                    )
+       Column(
+           modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+       ) {
+           val context = LocalContext.current
+           val clipboardManager = LocalClipboardManager.current
+           Row(
+               modifier = Modifier.fillMaxWidth(),
+               verticalAlignment = Alignment.CenterVertically
+           ) {
+               val headerText = if (group.semanticLabel.isNotBlank()) {
+                   "義類：${group.semanticLabel} ${group.groupId}"
+               } else {
+                   group.groupId
+               }
+              Text(
+                  text = headerText,
+                  fontSize = 12.sp,
+                   lineHeight = 14.sp,
+                  color = MaterialTheme.colorScheme.tertiary,
+                  fontWeight = FontWeight.Medium,
+                  modifier = Modifier.weight(1f)
+              )
+                DisableSelection {
+               IconButton(
+                   onClick = {
+                       val exportText = buildCognateExportText(group)
+                       clipboardManager.setText(AnnotatedString(exportText))
+                       Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
+                   },
+                   modifier = Modifier.size(24.dp)
+               ) {
+                   Icon(
+                       Icons.Default.ContentCopy,
+                       contentDescription = "複製同源詞",
+                       modifier = Modifier.size(14.dp),
+                       tint = MaterialTheme.colorScheme.tertiary
+                   )
+               }
                 }
             }
             group.members.forEach { m ->
@@ -534,21 +550,23 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = m.lang,
-                        fontSize = 12.sp,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = m.ipa,
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (isCurrent) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                   Text(
+                       text = m.lang,
+                       fontSize = 12.sp,
+                        lineHeight = 14.sp,
+                       color = if (isCurrent) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                       fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                       modifier = Modifier.weight(1f)
+                   )
+                   Text(
+                       text = m.ipa,
+                       fontSize = 13.sp,
+                        lineHeight = 15.sp,
+                       fontFamily = FontFamily.Monospace,
+                       color = if (isCurrent) MaterialTheme.colorScheme.onSurface
+                               else MaterialTheme.colorScheme.onSurfaceVariant
+                   )
                 }
             }
         }

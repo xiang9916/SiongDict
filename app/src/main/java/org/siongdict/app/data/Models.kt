@@ -38,8 +38,8 @@ data class DialectInfo(
 
 enum class SearchMode(val label: String) {
     CHAR("搜字"),
-    COGNATE("搜同源"),
-    MEANING("搜釋義")
+    MEANING("搜釋義"),
+    COGNATE("搜同源")
 }
 
 data class CognateEntry(
