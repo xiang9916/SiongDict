@@ -273,7 +273,7 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         val cogDb = openCognateDb() ?: return null
         try {
             val cursor = cogDb.rawQuery(
-                "SELECT cognate_group, semantic_label FROM cognate_auto WHERE lang = ? AND ipa = ? LIMIT 1",
+                "SELECT cognate_group, semantic_label FROM cognates WHERE lang = ? AND ipa = ? LIMIT 1",
                 arrayOf(lang, ipa)
             )
             var groupId: String? = null
@@ -288,7 +288,7 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
 
             val members = mutableListOf<CognateEntry>()
             val memberCursor = cogDb.rawQuery(
-                "SELECT lang, ipa, note, sort_key FROM cognate_auto WHERE cognate_group = ? ORDER BY sort_key",
+                "SELECT lang, ipa, note, sort_key FROM cognates WHERE cognate_group = ? ORDER BY sort_key",
                 arrayOf(groupId)
             )
             memberCursor.use {
@@ -314,7 +314,7 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
            val groupIds = mutableSetOf<String>()
            for (v in expandQueryVariants(query)) {
                val cursor = cogDb.rawQuery(
-                   "SELECT DISTINCT cognate_group FROM cognate_auto WHERE cognate_group LIKE ? OR ipa LIKE ? OR semantic_label LIKE ?",
+                   "SELECT DISTINCT cognate_group FROM cognates WHERE cognate_group LIKE ? OR ipa LIKE ? OR semantic_label LIKE ?",
                    arrayOf("%$v%", "%$v%", "%$v%")
                )
                cursor.use {
@@ -327,7 +327,7 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
             val results = mutableListOf<CognateGroup>()
             for (gid in groupIds) {
                 val memberCursor = cogDb.rawQuery(
-                    "SELECT lang, ipa, note, sort_key, semantic_label FROM cognate_auto WHERE cognate_group = ? ORDER BY sort_key",
+                    "SELECT lang, ipa, note, sort_key, semantic_label FROM cognates WHERE cognate_group = ? ORDER BY sort_key",
                     arrayOf(gid)
                 )
                 val members = mutableListOf<CognateEntry>()

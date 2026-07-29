@@ -41,6 +41,9 @@ DEFAULT_OUTPUT = os.path.normpath(
 SEMANTIC_LABELS = {
     "HIDE": "躲藏/捉迷藏",
 }
+LABEL_MAP = {**SEMANTIC_LABELS, "HIDE": "躲藏/捉迷藏", "ATTACH": "附着",
+             "WRAP": "包覆", "COVER": "蓋上", "OVERLAY": "疊加",
+             "DIVINEANSWER": "聖筊", "STACKING": "疊加"}
 
 # Special characters excluded from bridge tables
 SPECIAL_CHARS = {"□", "〇"}
@@ -251,18 +254,18 @@ def cluster_cognates(entries, initial_chars, final_chars, tone_chars):
 
 # ─── Step 5: Build cognates.db ───
 
-def load_manual_overrides(output_path):
-    """Load cognate_manual table from existing cognates.db before rebuild.
+def load_manual_entries(output_path):
+    """Load source='manual' entries from cognates.db before rebuild.
 
-    Returns a list of dicts: {chars, lang, ipa, cognate_group, note}
-    Returns empty list if file doesn't exist or table is missing.
+    Returns a list of dicts. Returns empty list if file or table is missing.
     """
     if not os.path.exists(output_path):
         return []
     try:
         conn = sqlite3.connect(output_path)
         c = conn.cursor()
-        c.execute("SELECT chars, lang, ipa, cognate_group, note, semantic_tag, semantic_label FROM cognate_manual")
+        c.execute("""SELECT chars, lang, ipa, cognate_group, note, semantic_tag, semantic_label
+                     FROM cognates WHERE source = 'manual'""")
         rows = c.fetchall()
         conn.close()
         return [{"chars": r[0] or "", "lang": r[1] or "", "ipa": re.sub(r"[-=]+$", "", r[2] or ""),
@@ -272,76 +275,77 @@ def load_manual_overrides(output_path):
         return []
 
 
-def apply_manual_overrides(conn, overrides, db_path):
-    """Apply manual overrides on top of auto-generated cognate_auto table.
+def lookup_sort_key(lang, ipa, siong_conn):
+    """Look up sort_key from siongdict.db for a given (lang, ipa) pair."""
+    try:
+        sc = siong_conn.cursor()
+        sc.execute("SELECT 排序 FROM langs WHERE 語言 = ? AND 讀音 = ? LIMIT 1", (lang, ipa))
+        row = sc.fetchone()
+        return row[0] if row else ""
+    except Exception:
+        return ""
 
-    For each override:
-    - If an auto entry with matching (lang, ipa) exists, update its cognate_group.
-    - If no matching auto entry exists, insert a new row (manually added entry).
-    - Re-parse IPA for the new/updated entry to fill initial/final/tone_cat.
 
-    After applying all overrides, rebuild cognate_groups counts.
+def insert_manual_entries(conn, manual_entries, db_path):
+    """Insert manual entries into cognates table with source='manual'.
+
+    For each manual entry, parse IPA, look up sort_key, and insert.
+    Also delete any conflicting auto entry (same lang+ipa) so manual
+    entries always take precedence.
     """
-    if not overrides:
-        print("  No manual overrides to apply.")
+    if not manual_entries:
+        print("  No manual entries to insert.")
         return
 
-    print(f"  Applying {len(overrides)} manual overrides...")
+    print(f"  Inserting {len(manual_entries)} manual entries...")
     c = conn.cursor()
+    siong_conn = sqlite3.connect(db_path)
 
-    for ov in overrides:
-        ipa_parsed = parse_ipa(re.sub(r"[-=]+$", "", ov["ipa"]))
+    for me in manual_entries:
+        ipa_clean = re.sub(r"[-=]+$", "", me["ipa"])
+        ipa_parsed = parse_ipa(ipa_clean)
         if ipa_parsed:
             init, final, tone = ipa_parsed[0]
             tcat = get_tone_category(tone)
         else:
             init, final, tcat = "", "", ""
 
-        # Use semantic_tag/label from manual override if available
-        tag = ov.get("semantic_tag", "")
-        label = ov.get("semantic_label", "")
+        tag = me.get("semantic_tag", "")
+        label = me.get("semantic_label", "")
         if not tag:
-            tag = ov["cognate_group"].split("_")[0] if "_" in ov["cognate_group"] else ov["cognate_group"]
+            tag = me["cognate_group"].split("_")[0] if "_" in me["cognate_group"] else me["cognate_group"]
         if not label:
-            label_map = {**SEMANTIC_LABELS, "HIDE": "躲藏/捉迷藏", "ATTACH": "附着",
-                         "WRAP": "包覆", "COVER": "蓋上", "OVERLAY": "疊加",
-                         "DIVINEANSWER": "聖筊"}
-            label = label_map.get(tag, tag)
+            label = LABEL_MAP.get(tag, tag)
 
-        # Get sort_key from siongdict.db if possible
-        sort_key = ""
-        try:
-            sconn = sqlite3.connect(db_path)
-            sc = sconn.cursor()
-            sc.execute("SELECT 排序 FROM langs WHERE 語言 = ? AND 讀音 = ? LIMIT 1",
-                       (ov["lang"], ov["ipa"]))
-            row = sc.fetchone()
-            if row:
-                sort_key = row[0] or ""
-            sconn.close()
-        except Exception:
-            pass
+        sort_key = lookup_sort_key(me["lang"], ipa_clean, siong_conn)
 
-        # Check if auto entry exists
-        c.execute("SELECT id FROM cognate_auto WHERE lang = ? AND ipa = ? LIMIT 1",
-                  (ov["lang"], ov["ipa"]))
-        existing = c.fetchone()
+        # Delete conflicting auto entry (same lang+ipa) so manual takes precedence
+        c.execute("DELETE FROM cognates WHERE source = 'auto' AND lang = ? AND ipa = ?",
+                  (me["lang"], ipa_clean))
 
-        if existing:
-            c.execute(
-                "UPDATE cognate_auto SET cognate_group = ?, semantic_tag = ?, semantic_label = ?, chars = ?, note = ? WHERE id = ?",
-                (ov["cognate_group"], tag, label, ov["chars"], ov["note"], existing[0])
-            )
-        else:
-            c.execute(
-                "INSERT INTO cognate_auto (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (ov["cognate_group"], tag, label, ov["chars"], ov["lang"], ov["ipa"],
-                 ov["note"], sort_key, init, final, tcat)
-            )
+        c.execute(
+            """INSERT INTO cognates
+               (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note,
+                sort_key, initial, final, tone_cat, source, modified_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual', datetime('now'))""",
+            (me["cognate_group"], tag, label, me["chars"], me["lang"], ipa_clean,
+             me["note"], sort_key, init, final, tcat)
+        )
 
+    siong_conn.close()
     conn.commit()
 
-    # Rebuild cognate_groups from cognate_auto
+    # Show summary
+    c.execute("SELECT cognate_group, COUNT(*) FROM cognates GROUP BY cognate_group ORDER BY cognate_group")
+    groups = c.fetchall()
+    print(f"  After manual entries: {len(groups)} cognate groups")
+    for gid, count in groups:
+        print(f"    {gid}: {count}")
+
+
+def rebuild_groups(conn):
+    """Rebuild cognate_groups from cognates table."""
+    c = conn.cursor()
     c.execute("DELETE FROM cognate_groups")
     c.execute("""
         INSERT INTO cognate_groups (cognate_group, semantic_tag, semantic_label, member_count, dialect_count)
@@ -350,24 +354,17 @@ def apply_manual_overrides(conn, overrides, db_path):
                MAX(semantic_label) as semantic_label,
                COUNT(*) as member_count,
                COUNT(DISTINCT lang) as dialect_count
-        FROM cognate_auto
+        FROM cognates
         GROUP BY cognate_group
     """)
     conn.commit()
 
-    # Show override summary
-    c.execute("SELECT cognate_group, COUNT(*) FROM cognate_auto GROUP BY cognate_group ORDER BY cognate_group")
-    groups = c.fetchall()
-    print(f"  After overrides: {len(groups)} cognate groups")
-    for gid, count in groups:
-        print(f"    {gid}: {count}")
-
 
 def build_cognates_db(db_path, output_path):
-    # Step 0: Backup manual overrides before destroying the file
-    print("Step 0: Backing up manual overrides...")
-    overrides = load_manual_overrides(output_path)
-    print(f"  Found {len(overrides)} manual override entries")
+    # Step 0: Backup manual entries before destroying the file
+    print("Step 0: Backing up manual entries...")
+    manual_entries = load_manual_entries(output_path)
+    print(f"  Found {len(manual_entries)} manual entries")
 
     if os.path.exists(output_path):
         os.remove(output_path)
@@ -414,8 +411,9 @@ def build_cognates_db(db_path, output_path):
     conn = sqlite3.connect(output_path)
     c = conn.cursor()
 
+    # Single merged table: replaces old cognate_auto + cognate_manual
     c.execute("""
-        CREATE TABLE cognate_auto (
+        CREATE TABLE cognates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cognate_group TEXT NOT NULL,
             semantic_tag TEXT NOT NULL,
@@ -427,21 +425,9 @@ def build_cognates_db(db_path, output_path):
             sort_key TEXT,
             initial TEXT,
             final TEXT,
-            tone_cat TEXT
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS cognate_manual (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chars TEXT,
-            lang TEXT,
-            ipa TEXT,
-            cognate_group TEXT NOT NULL,
-            note TEXT,
-            modified_at TEXT DEFAULT (datetime('now')),
-            semantic_tag TEXT,
-            semantic_label TEXT
+            tone_cat TEXT,
+            source TEXT NOT NULL DEFAULT 'auto',
+            modified_at TEXT
         )
     """)
 
@@ -455,13 +441,17 @@ def build_cognates_db(db_path, output_path):
         )
     """)
 
+    # Insert auto-generated entries
     inserted = 0
     group_meta = {}
     for gid, tag, cluster in all_clusters:
         label = SEMANTIC_LABELS.get(tag, tag)
         for e in cluster:
             c.execute(
-                "INSERT INTO cognate_auto (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                """INSERT INTO cognates
+                   (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note,
+                    sort_key, initial, final, tone_cat, source)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,'auto')""",
                 (gid, tag, label, e["chars"], e["lang"], e["ipa"], e["note"],
                  e["sortKey"], e["initial"], e["final"], e["tone_cat"])
             )
@@ -469,43 +459,34 @@ def build_cognates_db(db_path, output_path):
         if gid not in group_meta:
             group_meta[gid] = (tag, label, len(cluster), len(set(e["lang"] for e in cluster)))
 
-    for gid, (tag, label, mc, dc) in group_meta.items():
-        c.execute("INSERT INTO cognate_groups VALUES (?,?,?,?,?)", (gid, tag, label, mc, dc))
+    # Step 5: Insert manual entries (delete conflicting auto entries first)
+    print("Step 5: Inserting manual entries...")
+    insert_manual_entries(conn, manual_entries, db_path)
 
-    # Step 5: Apply manual overrides
-    print("Step 5: Applying manual overrides...")
-    apply_manual_overrides(conn, overrides, db_path)
+    # Rebuild cognate_groups from final state
+    rebuild_groups(conn)
 
-    # Step 6: Restore manual overrides table
-    print("Step 6: Restoring manual overrides table...")
-    c.execute("DELETE FROM cognate_manual")
-    for ov in overrides:
-        c.execute(
-            "INSERT INTO cognate_manual (chars, lang, ipa, cognate_group, note, semantic_tag, semantic_label) VALUES (?,?,?,?,?,?,?)",
-            (ov["chars"], ov["lang"], ov["ipa"], ov["cognate_group"], ov["note"],
-             ov.get("semantic_tag", ""), ov.get("semantic_label", ""))
-        )
     conn.commit()
-
-    c.execute("PRAGMA user_version = 2")
+    c.execute("PRAGMA user_version = 3")
     conn.commit()
     conn.close()
 
     # Recount final stats
     conn2 = sqlite3.connect(output_path)
     c2 = conn2.cursor()
-    c2.execute("SELECT COUNT(*) FROM cognate_auto")
+    c2.execute("SELECT COUNT(*) FROM cognates")
     total = c2.fetchone()[0]
+    c2.execute("SELECT COUNT(*) FROM cognates WHERE source = 'auto'")
+    auto_count = c2.fetchone()[0]
+    c2.execute("SELECT COUNT(*) FROM cognates WHERE source = 'manual'")
+    manual_count = c2.fetchone()[0]
     c2.execute("SELECT COUNT(*) FROM cognate_groups")
     groups = c2.fetchone()[0]
-    c2.execute("SELECT COUNT(*) FROM cognate_manual")
-    manual_count = c2.fetchone()[0]
     conn2.close()
 
     print(f"\nCognates database built: {output_path}")
-    print(f"  Total entries: {total}")
+    print(f"  Total entries: {total} (auto: {auto_count}, manual: {manual_count})")
     print(f"  Cognate groups: {groups}")
-    print(f"  Manual overrides: {manual_count}")
     print(f"  DB size: {os.path.getsize(output_path) / 1024:.1f} KB")
 
 

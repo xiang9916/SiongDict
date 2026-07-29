@@ -2,7 +2,7 @@
 """
 One-shot script to modify cognates.db directly.
 Handles: SHOULDER_kan1 deletions, COVER_ɡɔm4 additions, COVER_do5/do6 creation, CONCEAL_ke3 creation.
-Updates all three tables: cognate_auto, cognate_manual, cognate_groups.
+Updates cognates and cognate_groups tables..
 """
 
 import os
@@ -34,7 +34,7 @@ def get_sort_key(lang, siong_conn):
 
 
 def rebuild_groups(conn):
-    """Rebuild cognate_groups from cognate_auto."""
+    """Rebuild cognate_groups from cognates."""
     c = conn.cursor()
     c.execute("DELETE FROM cognate_groups")
     c.execute("""
@@ -44,7 +44,7 @@ def rebuild_groups(conn):
                COALESCE(semantic_label, ''),
                COUNT(*),
                COUNT(DISTINCT lang)
-        FROM cognate_auto
+        FROM cognates
         GROUP BY cognate_group
     """)
     conn.commit()
@@ -64,8 +64,8 @@ def main():
         ("雙峰甘棠", "kai1"),
     ]
     for lang, ipa in delete_from_shoulder:
-        c.execute("DELETE FROM cognate_auto WHERE cognate_group='SHOULDER_kan1' AND lang=? AND ipa=?", (lang, ipa))
-        c.execute("DELETE FROM cognate_manual WHERE cognate_group='SHOULDER_kan1' AND lang=? AND ipa=?", (lang, ipa))
+        c.execute("DELETE FROM cognates WHERE cognate_group='SHOULDER_kan1' AND lang=? AND ipa=?", (lang, ipa))
+        c.execute("DELETE FROM cognates WHERE cognate_group='SHOULDER_kan1' AND lang=? AND ipa=?", (lang, ipa))
         print(f"  Deleted SHOULDER_kan1: {lang} {ipa}")
 
     # ─── TASK 2: Add to COVER_ɡɔm4 ───
@@ -81,7 +81,7 @@ def main():
         ("□", "酃縣", "kẽ3", "动词,盖:~盖子", "04_JB-027"),
     ]
     existing_gom4 = set()
-    for row in c.execute("SELECT lang, ipa FROM cognate_auto WHERE cognate_group='COVER_ɡɔm4'"):
+    for row in c.execute("SELECT lang, ipa FROM cognates WHERE cognate_group='COVER_ɡɔm4'"):
         existing_gom4.add((row[0], row[1]))
 
     for chars, lang, ipa, note, sort_key in cover_gom4_additions:
@@ -91,14 +91,14 @@ def main():
         init, final, tone, tc = parse_entry(ipa)
         if not init and not final:
             continue
-        # Add to cognate_auto
+        # Add to cognates
         c.execute("""
-            INSERT INTO cognate_auto (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat)
+            INSERT INTO cognates (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat)
             VALUES ('COVER_ɡɔm4', 'COVER', '蓋上', ?, ?, ?, ?, ?, ?, ?, ?)
         """, (chars, lang, ipa, note, sort_key, init, final, tc))
-        # Add to cognate_manual
+        # Add to cognates
         c.execute("""
-            INSERT INTO cognate_manual (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, modified_at)
+            INSERT INTO cognates (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, modified_at)
             VALUES ('COVER_ɡɔm4', 'COVER', '蓋上', ?, ?, ?, ?, datetime('now'))
         """, (chars, lang, ipa, note))
         print(f"  Added COVER_ɡɔm4: {lang} {ipa}")
@@ -118,16 +118,16 @@ def main():
         if not init and not final:
             continue
         # Check duplicate
-        c.execute("SELECT id FROM cognate_auto WHERE cognate_group=? AND lang=? AND ipa=?", (COVER_DO_GROUP, lang, ipa))
+        c.execute("SELECT id FROM cognates WHERE cognate_group=? AND lang=? AND ipa=?", (COVER_DO_GROUP, lang, ipa))
         if c.fetchone():
             print(f"  SKIP {COVER_DO_GROUP} (duplicate): {lang} {ipa}")
             continue
         c.execute("""
-            INSERT INTO cognate_auto (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat)
+            INSERT INTO cognates (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat)
             VALUES (?, 'COVER', '蓋上', ?, ?, ?, ?, ?, ?, ?, ?)
         """, (COVER_DO_GROUP, chars, lang, ipa, note, sort_key, init, final, tc))
         c.execute("""
-            INSERT INTO cognate_manual (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, modified_at)
+            INSERT INTO cognates (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, modified_at)
             VALUES (?, 'COVER', '蓋上', ?, ?, ?, ?, datetime('now'))
         """, (COVER_DO_GROUP, chars, lang, ipa, note))
         print(f"  Added {COVER_DO_GROUP}: {lang} {ipa}")
@@ -165,16 +165,16 @@ def main():
         init, final, tone, tc = parse_entry(ipa)
         if not init and not final:
             continue
-        c.execute("SELECT id FROM cognate_auto WHERE cognate_group=? AND lang=? AND ipa=?", (CONCEAL_GROUP, lang, ipa))
+        c.execute("SELECT id FROM cognates WHERE cognate_group=? AND lang=? AND ipa=?", (CONCEAL_GROUP, lang, ipa))
         if c.fetchone():
             print(f"  SKIP {CONCEAL_GROUP} (duplicate): {lang} {ipa}")
             continue
         c.execute("""
-            INSERT INTO cognate_auto (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat)
+            INSERT INTO cognates (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, sort_key, initial, final, tone_cat)
             VALUES (?, 'CONCEAL', '收藏', ?, ?, ?, ?, ?, ?, ?, ?)
         """, (CONCEAL_GROUP, chars, lang, ipa, note, sort_key, init, final, tc))
         c.execute("""
-            INSERT INTO cognate_manual (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, modified_at)
+            INSERT INTO cognates (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note, modified_at)
             VALUES (?, 'CONCEAL', '收藏', ?, ?, ?, ?, datetime('now'))
         """, (CONCEAL_GROUP, chars, lang, ipa, note))
         print(f"  Added {CONCEAL_GROUP}: {lang} {ipa}")
@@ -185,7 +185,7 @@ def main():
     # ─── Summary ───
     print("\n=== Summary ===")
     for group in ["SHOULDER_kan1", "COVER_ɡɔm4", COVER_DO_GROUP, CONCEAL_GROUP]:
-        c.execute("SELECT COUNT(*), COUNT(DISTINCT lang) FROM cognate_auto WHERE cognate_group=?", (group,))
+        c.execute("SELECT COUNT(*), COUNT(DISTINCT lang) FROM cognates WHERE cognate_group=?", (group,))
         cnt, dc = c.fetchone()
         print(f"  {group}: {cnt} members, {dc} dialects")
 
