@@ -328,11 +328,12 @@ private fun InfoDialog(
         } catch (e: Exception) { "" }
     }
 
-    if (resetting) {
-        AlertDialog(
-            onDismissRequest = {},
-            confirmButton = {},
-            title = { Text("重置中") },
+   if (resetting) {
+       AlertDialog(
+           onDismissRequest = {},
+           confirmButton = {},
+           containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+           title = { Text("重置中") },
             text = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -351,10 +352,11 @@ private fun InfoDialog(
         return
     }
 
-    if (showResetConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            title = { Text("重置資料庫") },
+   if (showResetConfirm) {
+       AlertDialog(
+           onDismissRequest = { showResetConfirm = false },
+           containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+           title = { Text("重置資料庫") },
             text = { Text("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。") },
             confirmButton = {
                 TextButton(onClick = { resetting = true }) { Text("重置") }
@@ -366,11 +368,12 @@ private fun InfoDialog(
         return
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            tonalElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.85f)
+   Dialog(onDismissRequest = onDismiss) {
+       Surface(
+           shape = RoundedCornerShape(16.dp),
+           color = MaterialTheme.colorScheme.surfaceContainerLow,
+           tonalElevation = 0.dp,
+           modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.85f)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
