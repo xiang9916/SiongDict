@@ -61,12 +61,33 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
                 }
             }
         }
-        toneSystemCache = map
-        Log.i(TAG, "Loaded tone systems for ${map.size} dialects")
-        return map[jc]
-    }
+       toneSystemCache = map
+       Log.i(TAG, "Loaded tone systems for ${map.size} dialects")
+       return map[jc]
+   }
 
-    init {
+   private fun getAppVersion(): String {
+       return try {
+           @Suppress("DEPRECATION")
+           val pInfo = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+           pInfo.versionName ?: ""
+       } catch (e: Exception) {
+           ""
+       }
+   }
+
+   private fun markDatabaseVersion() {
+       val prefs = ctx.getSharedPreferences("siongdict_prefs", Context.MODE_PRIVATE)
+       prefs.edit().putString("app_version", getAppVersion()).apply()
+   }
+
+   fun isDatabaseOutdated(): Boolean {
+       val prefs = ctx.getSharedPreferences("siongdict_prefs", Context.MODE_PRIVATE)
+       val storedVersion = prefs.getString("app_version", null) ?: return false
+       return storedVersion != getAppVersion()
+   }
+
+   init {
         val dbFile = ctx.getDatabasePath(DB_NAME)
         if (!dbFile.exists()) {
             copyDatabase()
@@ -91,8 +112,9 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         ctx.assets.open("databases/$DB_NAME").use { input ->
             FileOutputStream(dbFile).use { output -> input.copyTo(output) }
         }
-        Log.i(TAG, "Database copied, size=${dbFile.length()}")
-    }
+       Log.i(TAG, "Database copied, size=${dbFile.length()}")
+       markDatabaseVersion()
+   }
 
     private fun copyCognateDatabase() {
         val dbFile = ctx.getDatabasePath(COG_NAME)

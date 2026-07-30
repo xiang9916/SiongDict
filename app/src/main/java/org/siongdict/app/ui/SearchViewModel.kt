@@ -26,9 +26,10 @@ data class SearchUiState(
     val loading: Boolean = false,
     val searched: Boolean = false,
     val error: String? = null,
-    val filterXiangGan: Boolean = true,
-    val filterZhongShangJiang: Boolean = true,
-    val filterXiangHuaTuHua: Boolean = true
+   val filterXiangGan: Boolean = true,
+   val filterZhongShangJiang: Boolean = true,
+   val filterXiangHuaTuHua: Boolean = true,
+   val dbOutdated: Boolean = false
 )
 
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
@@ -39,9 +40,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val db = DictDatabase(app)
 
     private val _uiState = MutableStateFlow(SearchUiState())
-    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+   val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    fun updateQuery(q: String) {
+   init {
+       _uiState.value = _uiState.value.copy(dbOutdated = db.isDatabaseOutdated())
+   }
+
+   fun updateQuery(q: String) {
         _uiState.value = _uiState.value.copy(query = q, error = null)
     }
 
@@ -107,9 +112,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             db.forceReset()
             _uiState.value = _uiState.value.copy(
-                results = emptyList(),
-                searched = false,
-                error = null
+               results = emptyList(),
+               searched = false,
+               error = null,
+               dbOutdated = false
             )
         }
     }

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,6 +45,9 @@ import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.DialectEntry
 import org.siongdict.app.data.CognateGroup
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,16 +55,29 @@ import kotlinx.coroutines.launch
 fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-   var showResetDialog by remember { mutableStateOf(false) }
+   val scope = rememberCoroutineScope()
+   var showInfoDialog by remember { mutableStateOf(false) }
    var showFilterMenu by remember { mutableStateOf(false) }
+   val context = LocalContext.current
+   val appVersion = remember {
+       try {
+           @Suppress("DEPRECATION")
+           val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+           pInfo.versionName ?: ""
+       } catch (e: Exception) {
+           ""
+       }
+   }
 
     Scaffold(
         topBar = {
             Column {
-                TopAppBar(
-                    title = { Text("湘典", fontWeight = FontWeight.Bold) },
-                    actions = {
+               TopAppBar(
+                    title = {
+                        val suffix = if (uiState.dbOutdated) " - 有更新" else ""
+                        Text("湘典 ($appVersion$suffix)", fontWeight = FontWeight.Bold)
+                    },
+                   actions = {
                         IconButton(onClick = { showFilterMenu = true }) {
                             Icon(
                                 Icons.Default.Visibility,
@@ -130,13 +147,13 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                                 onClick = {}
                             )
                         }
-                        IconButton(onClick = { showResetDialog = true }) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "重置資料庫",
-                                tint = Color.White
-                            )
-                        }
+                        IconButton(onClick = { showInfoDialog = true }) {
+                           Icon(
+                                Icons.Default.Info,
+                                contentDescription = "關於",
+                               tint = Color.White
+                           )
+                       }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color(0xFF8B0000),
@@ -285,24 +302,46 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
        }
     }
 
-    if (showResetDialog) {
-        ResetConfirmDialog(viewModel = viewModel, onDismiss = { showResetDialog = false })
+    if (showInfoDialog) {
+        InfoDialog(viewModel = viewModel, onDismiss = { showInfoDialog = false })
     }
 }
 
 @Composable
-private fun ResetConfirmDialog(
+private fun InfoDialog(
     viewModel: SearchViewModel,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    var showResetConfirm by remember { mutableStateOf(false) }
     var resetting by remember { mutableStateOf(false) }
+
+    val latestChangelog = remember {
+        try {
+            val text = context.assets.open("CHANGELOG.md").bufferedReader().use { it.readText() }
+            extractLatestChangelog(text)
+        } catch (e: Exception) { "" }
+    }
+    val readmeText = remember {
+        try {
+            context.assets.open("README.md").bufferedReader().use { it.readText() }
+        } catch (e: Exception) { "" }
+    }
 
     if (resetting) {
         AlertDialog(
             onDismissRequest = {},
             confirmButton = {},
             title = { Text("重置中") },
-            text = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { CircularProgressIndicator(); Text("正在重新載入資料庫…") } }
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text("正在重新載入資料庫…")
+                }
+            }
         )
         LaunchedEffect(Unit) {
             viewModel.resetDatabases()
@@ -312,17 +351,98 @@ private fun ResetConfirmDialog(
         return
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("重置資料庫") },
-        text = { Text("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。") },
-        confirmButton = {
-            TextButton(onClick = { resetting = true }) { Text("重置") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+    if (showResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text("重置資料庫") },
+            text = { Text("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。") },
+            confirmButton = {
+                TextButton(onClick = { resetting = true }) { Text("重置") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) { Text("取消") }
+            }
+        )
+        return
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.85f)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("關於", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = onDismiss) { Text("關閉") }
+                }
+                HorizontalDivider()
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showResetConfirm = true }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            "重置資料庫",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    HorizontalDivider()
+
+                    if (latestChangelog.isNotBlank()) {
+                        Text(latestChangelog, fontSize = 13.sp, lineHeight = 20.sp)
+                    }
+
+                    HorizontalDivider()
+
+                    Text(readmeText, fontSize = 13.sp, lineHeight = 20.sp)
+                }
+            }
         }
-    )
+    }
+}
+
+private fun extractLatestChangelog(changelog: String): String {
+    val lines = changelog.lines()
+    var firstIdx = -1
+    var endIdx = lines.size
+    for (i in lines.indices) {
+        if (lines[i].startsWith("### ")) {
+            if (firstIdx == -1) {
+                firstIdx = i
+            } else {
+                endIdx = i
+                break
+            }
+        }
+    }
+    if (firstIdx == -1) return changelog
+    return lines.subList(firstIdx, endIdx).joinToString("\n").trim()
 }
 
 @Composable
