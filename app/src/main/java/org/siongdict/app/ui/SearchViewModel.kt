@@ -43,7 +43,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
    init {
-       _uiState.value = _uiState.value.copy(dbOutdated = db.isDatabaseOutdated())
+       val outdated = db.isDatabaseOutdated()
+       _uiState.value = _uiState.value.copy(dbOutdated = outdated)
+       if (outdated) {
+           viewModelScope.launch(Dispatchers.IO) {
+               db.forceReset()
+               _uiState.value = _uiState.value.copy(dbOutdated = false)
+           }
+       }
    }
 
    fun updateQuery(q: String) {
