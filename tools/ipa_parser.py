@@ -13,7 +13,7 @@ import re
 INITIALS = [
     # Voiced aspirated (MCPDict-specific with ʱ)
     r"dzʱ", r"tsʱ", r"tʂʱ", r"tɕʱ", r"tʃʱ",
-    r"dʑʱ", r"dzʱ",
+    r"dʑʱ",
     r"pʱ", r"tʱ", r"kʱ", r"bʱ", r"dʱ", r"gʱ",
     r"vʱ", r"zʱ", r"ɣʱ",
     # Aspirated with ʰ
@@ -98,17 +98,6 @@ def parse_ipa(ipa_str):
     return []
 
 
-def get_final_core(final_str):
-    """Extract the core vowel from a final, stripping nasals and glides.
-
-    e.g. 'iɑ' -> 'iɑ', 'aŋ' -> 'a', 'iae' -> 'iae'
-    """
-    if not final_str:
-        return ""
-    core = re.sub(r"[ŋɲmnɴ]+$", "", final_str)
-    core = re.sub(r"[̃ᵑⁿ]+$", "", core)
-    core = re.sub(r"[ʷʲ]+$", "", core)
-    return core
 
 
 def get_tone_category(tone_str):

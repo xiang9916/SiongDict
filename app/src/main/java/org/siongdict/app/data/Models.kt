@@ -26,16 +26,6 @@ data class CharGroup(
     val subtitle: String = ""
 )
 
-data class DialectInfo(
-    val name: String = "",
-    val shortName: String = "",
-    val location: String = "",
-    val division: String = "",
-    val ydDivision: String = "",
-    val color: String = "",
-    val charCount: String = ""
-)
-
 enum class SearchMode(val label: String) {
     CHAR("搜字"),
     MEANING("搜釋義"),

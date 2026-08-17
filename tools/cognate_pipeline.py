@@ -38,12 +38,15 @@ DEFAULT_OUTPUT = os.path.normpath(
     os.path.join(SCRIPT_DIR, "..", "app", "src", "main", "assets", "databases", "cognates.db")
 )
 
-SEMANTIC_LABELS = {
+LABEL_MAP = {
     "HIDE": "躲藏/捉迷藏",
+    "ATTACH": "附着",
+    "WRAP": "包覆",
+    "COVER": "蓋上",
+    "DIVINEANSWER": "聖筊",
+    "STACKING": "疊加",
+    "CONCEAL": "收藏",
 }
-LABEL_MAP = {**SEMANTIC_LABELS, "HIDE": "躲藏/捉迷藏", "ATTACH": "附着",
-             "WRAP": "包覆", "COVER": "蓋上", "OVERLAY": "疊加",
-             "DIVINEANSWER": "聖筊", "STACKING": "疊加"}
 
 # Special characters excluded from bridge tables
 SPECIAL_CHARS = {"□", "〇"}
@@ -133,12 +136,9 @@ def build_lookup_tables(db_path):
         for ch in char_list:
             if ch in SPECIAL_CHARS:
                 continue
-            if initial:
-                initial_chars[lang][initial].add(ch)
-            if final:
-                final_chars[lang][final].add(ch)
-            if tone_cat:
-                tone_chars[lang][tone_cat].add(ch)
+            initial_chars[lang][initial].add(ch)
+            final_chars[lang][final].add(ch)
+            tone_chars[lang][tone_cat].add(ch)
 
     conn.close()
     return dict(initial_chars), dict(final_chars), dict(tone_chars)
@@ -166,7 +166,7 @@ def check_bridge(d1, init1, final1, tone1,
     Returns True only if all three bridges meet the minimum count.
     """
     # Initial bridge
-    if init1 and init2:
+    if init1 or init2:
         s1 = initial_chars.get(d1, {}).get(init1, set())
         s2 = initial_chars.get(d2, {}).get(init2, set())
         if len(s1 & s2) < min_bridge:
@@ -176,7 +176,7 @@ def check_bridge(d1, init1, final1, tone1,
         return False
 
     # Final bridge (full final: vowel + coda as a whole)
-    if final1 and final2:
+    if final1 or final2:
         s1 = final_chars.get(d1, {}).get(final1, set())
         s2 = final_chars.get(d2, {}).get(final2, set())
         if len(s1 & s2) < min_bridge:
@@ -185,7 +185,7 @@ def check_bridge(d1, init1, final1, tone1,
         return False
 
     # Tone bridge
-    if tone1 and tone2:
+    if tone1 or tone2:
         s1 = tone_chars.get(d1, {}).get(tone1, set())
         s2 = tone_chars.get(d2, {}).get(tone2, set())
         if len(s1 & s2) < min_bridge:
@@ -445,7 +445,7 @@ def build_cognates_db(db_path, output_path):
     inserted = 0
     group_meta = {}
     for gid, tag, cluster in all_clusters:
-        label = SEMANTIC_LABELS.get(tag, tag)
+        label = LABEL_MAP.get(tag, tag)
         for e in cluster:
             c.execute(
                 """INSERT INTO cognates

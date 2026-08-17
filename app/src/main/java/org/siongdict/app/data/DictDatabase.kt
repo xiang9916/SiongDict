@@ -160,9 +160,6 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
 
-    override fun onConfigure(db: SQLiteDatabase) {
-        super.onConfigure(db)
-    }
 
    fun getVariants(ch: String): List<String> {
        if (variantMap == null) {
@@ -226,27 +223,6 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         val cursor = db.rawQuery(
             "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 字組 MATCH ? ORDER BY 排序",
             arrayOf(hz)
-        )
-        cursor.use {
-            while (it.moveToNext()) {
-                results.add(SearchResult(
-                    chars = it.getString(0),
-                    lang = it.getString(1),
-                    ipa = it.getString(2),
-                    note = it.getString(3) ?: "",
-                    sortKey = it.getString(4) ?: ""
-                ))
-            }
-        }
-        return results
-    }
-
-    fun searchByPron(ipa: String): List<SearchResult> {
-        val db = readableDatabase
-        val results = mutableListOf<SearchResult>()
-        val cursor = db.rawQuery(
-            "SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs WHERE 讀音 MATCH ? ORDER BY 排序",
-            arrayOf(ipa)
         )
         cursor.use {
             while (it.moveToNext()) {
@@ -375,47 +351,4 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         }
     }
 
-    fun getDialectInfo(jc: String): DialectInfo? {
-        val db = readableDatabase
-        val cursor = db.rawQuery(
-            "SELECT 語言, 地點, 地圖集二分區, 音典分區, 音典顏色, 字數 FROM info WHERE 簡稱 MATCH ?",
-            arrayOf(jc)
-        )
-        cursor.use {
-            if (it.moveToFirst()) {
-                return DialectInfo(
-                    name = it.getString(0),
-                    location = it.getString(1),
-                    division = it.getString(2),
-                    ydDivision = it.getString(3),
-                    color = it.getString(4) ?: "",
-                    charCount = it.getString(5) ?: ""
-                )
-            }
-        }
-        return null
-    }
-
-    fun getAllDialects(): List<DialectInfo> {
-        val db = readableDatabase
-        val results = mutableListOf<DialectInfo>()
-        val cursor = db.rawQuery(
-            "SELECT 簡稱, 語言, 地點, 音典分區, 音典顏色, 字數 FROM info ORDER BY 音典分區, 簡稱",
-            null
-        )
-        cursor.use {
-            while (it.moveToNext()) {
-                results.add(DialectInfo(
-                    name = it.getString(1),
-                    shortName = it.getString(0),
-                    location = it.getString(2),
-                    division = "",
-                    ydDivision = it.getString(3) ?: "",
-                    color = it.getString(4) ?: "",
-                    charCount = it.getString(5) ?: ""
-                ))
-            }
-        }
-        return results
-    }
 }

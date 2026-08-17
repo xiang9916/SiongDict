@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,13 +33,11 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.siongdict.app.data.SearchMode
-import org.siongdict.app.data.SearchResult
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.DialectEntry
 import org.siongdict.app.data.CognateGroup
@@ -58,16 +55,6 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
    val scope = rememberCoroutineScope()
    var showInfoDialog by remember { mutableStateOf(false) }
    var showFilterMenu by remember { mutableStateOf(false) }
-   val context = LocalContext.current
-   val appVersion = remember {
-       try {
-           @Suppress("DEPRECATION")
-           val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-           pInfo.versionName ?: ""
-       } catch (e: Exception) {
-           ""
-       }
-   }
 
     Scaffold(
         topBar = {
@@ -75,7 +62,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                TopAppBar(
                     title = {
                         val suffix = if (uiState.dbOutdated) " - 有更新" else ""
-                        Text("湘典 ($appVersion$suffix)", fontWeight = FontWeight.Bold)
+                        Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
                     },
                    actions = {
                         IconButton(onClick = { showFilterMenu = true }) {
@@ -280,9 +267,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                                 uiState.results,
                                 key = { _, group -> "${group.chars}_${group.subtitle}" }
                             ) { index, group ->
-                                val navText = group.chars.replace(" ", "").let {
-                                    if (it.length <= 2) it else it.take(2)
-                                }
+                                val navText = group.chars.replace(" ", "").take(2)
                                 Text(
                                     text = navText,
                                     fontSize = 11.sp,

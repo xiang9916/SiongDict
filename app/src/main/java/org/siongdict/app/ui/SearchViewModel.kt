@@ -9,14 +9,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.siongdict.app.data.CharGroup
+import org.siongdict.app.data.CognateGroup
+import org.siongdict.app.data.DialectEntry
 import org.siongdict.app.data.DictDatabase
+import org.siongdict.app.data.PronEntry
 import org.siongdict.app.data.SearchMode
 import org.siongdict.app.data.SearchResult
-import org.siongdict.app.data.CharGroup
-import org.siongdict.app.data.DialectEntry
-import org.siongdict.app.data.PronEntry
-import org.siongdict.app.data.CognateGroup
-import org.siongdict.app.data.CognateEntry
 import org.siongdict.app.data.ToneFormatter
 
 data class SearchUiState(
@@ -26,10 +25,11 @@ data class SearchUiState(
     val loading: Boolean = false,
     val searched: Boolean = false,
     val error: String? = null,
-   val filterXiangGan: Boolean = true,
-   val filterZhongShangJiang: Boolean = true,
-   val filterXiangHuaTuHua: Boolean = true,
-   val dbOutdated: Boolean = false
+    val filterXiangGan: Boolean = true,
+    val filterZhongShangJiang: Boolean = true,
+    val filterXiangHuaTuHua: Boolean = true,
+    val dbOutdated: Boolean = false,
+    val appVersion: String = ""
 )
 
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
@@ -40,20 +40,26 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val db = DictDatabase(app)
 
     private val _uiState = MutableStateFlow(SearchUiState())
-   val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-   init {
-       val outdated = db.isDatabaseOutdated()
-       _uiState.value = _uiState.value.copy(dbOutdated = outdated)
-       if (outdated) {
-           viewModelScope.launch(Dispatchers.IO) {
-               db.forceReset()
-               _uiState.value = _uiState.value.copy(dbOutdated = false)
-           }
-       }
-   }
+    init {
+        val app = getApplication<Application>()
+        val appVersion = runCatching {
+            @Suppress("DEPRECATION")
+            val pInfo = app.packageManager.getPackageInfo(app.packageName, 0)
+            pInfo.versionName ?: ""
+        }.getOrDefault("")
+        val outdated = db.isDatabaseOutdated()
+        _uiState.value = _uiState.value.copy(dbOutdated = outdated, appVersion = appVersion)
+        if (outdated) {
+            viewModelScope.launch(Dispatchers.IO) {
+                db.forceReset()
+                _uiState.value = _uiState.value.copy(dbOutdated = false)
+            }
+        }
+    }
 
-   fun updateQuery(q: String) {
+    fun updateQuery(q: String) {
         _uiState.value = _uiState.value.copy(query = q, error = null)
     }
 
@@ -69,40 +75,41 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-   fun search() {
-       val query = _uiState.value.query.trim()
-       if (query.isEmpty()) return
-       val mode = _uiState.value.mode
+    fun search() {
+        val query = _uiState.value.query.trim()
+        if (query.isEmpty()) return
+        val mode = _uiState.value.mode
         val s = _uiState.value
         val filterEnabled = !s.filterXiangGan || !s.filterZhongShangJiang || !s.filterXiangHuaTuHua
-       _uiState.value = _uiState.value.copy(loading = true, searched = true, error = null)
-       viewModelScope.launch(Dispatchers.IO) {
-           try {
-               val results = when (mode) {
-                  SearchMode.CHAR -> {
-                       // 搜字：逐字查询繁简异体变体，每种分别成卡，按方言数排序
-                       query.map { ch ->
-                           val variants = db.getVariants(ch.toString())
-                           variants.map { variant ->
-                               val raw = db.searchByChar(variant)
-                               .let { if (filterEnabled) filterResults(it) else it }
-                               groupCharResults(raw, variant)
-                           }.filter { it.isNotEmpty() }
-                               .sortedByDescending { it.first().entries.size }
-                               .flatten()
-                       }.flatten()
-                  }
-                  SearchMode.COGNATE -> {
-                      val cogGroups = db.searchCognates(query)
-                      .let { if (filterEnabled) filterCognateGroups(it) else it }
-                      groupCognateResults(cogGroups)
-                  }
-                   SearchMode.MEANING -> {
-                       val raw = db.searchByMeaning(query)
-                       .let { if (filterEnabled) filterResults(it) else it }
-                       groupResults(raw)
-                   }
-               }
+        _uiState.value = _uiState.value.copy(loading = true, searched = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val results = when (mode) {
+                    SearchMode.CHAR -> {
+                        // 搜字：逐字查询繁简异体变体，每种分别成卡，按方言数排序
+                        query.map { ch ->
+                            val variants = db.getVariants(ch.toString())
+                            variants.map { variant ->
+                                val raw = db.searchByChar(variant)
+                                    .let { if (filterEnabled) filterResults(it) else it }
+                                groupCharResults(raw, variant)
+                            }
+                                .filter { it.isNotEmpty() }
+                                .sortedByDescending { it.first().entries.size }
+                                .flatten()
+                        }.flatten()
+                    }
+                    SearchMode.COGNATE -> {
+                        val cogGroups = db.searchCognates(query)
+                            .let { if (filterEnabled) filterCognateGroups(it) else it }
+                        groupCognateResults(cogGroups)
+                    }
+                    SearchMode.MEANING -> {
+                        val raw = db.searchByMeaning(query)
+                            .let { if (filterEnabled) filterResults(it) else it }
+                        groupResults(raw)
+                    }
+                }
                 _uiState.value = _uiState.value.copy(results = results, loading = false)
             } catch (e: Exception) {
                 Log.e(TAG, "Search failed", e)
@@ -119,86 +126,70 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             db.forceReset()
             _uiState.value = _uiState.value.copy(
-               results = emptyList(),
-               searched = false,
-               error = null,
-               dbOutdated = false
+                results = emptyList(),
+                searched = false,
+                error = null,
+                dbOutdated = false
             )
         }
     }
 
-   // Filter raw search results by dialect division category
-   private fun isDialectVisible(lang: String): Boolean {
-       val s = _uiState.value
-       val div = db.getDialectDivision(lang)
-       return when {
-           div.startsWith("湘贛") -> s.filterXiangGan
-           div.startsWith("中上江") || div.startsWith("藍青") -> s.filterZhongShangJiang
-           div.startsWith("湘南") || div == "道州" || div == "鄉話" -> s.filterXiangHuaTuHua
+    // Filter raw search results by dialect division category
+    private fun isDialectVisible(lang: String): Boolean {
+        val s = _uiState.value
+        val div = db.getDialectDivision(lang)
+        return when {
+            div.startsWith("湘贛") -> s.filterXiangGan
+            div.startsWith("中上江") || div.startsWith("藍青") -> s.filterZhongShangJiang
+            div.startsWith("湘南") || div == "道州" || div == "鄉話" -> s.filterXiangHuaTuHua
             div.startsWith("嶺東") || div.startsWith("嶺南") || div.startsWith("閩") -> s.filterXiangHuaTuHua
             div == "戲劇" -> s.filterXiangGan || s.filterZhongShangJiang
-           else -> true
-       }
-   }
-
-    private fun filterResults(results: List<SearchResult>): List<SearchResult> {
-        return results.filter { r ->
-            isDialectVisible(r.lang)
+            else -> true
         }
     }
 
-    private fun filterCognateGroups(groups: List<CognateGroup>): List<CognateGroup> {
-        return groups.mapNotNull { g ->
+    private fun filterResults(results: List<SearchResult>): List<SearchResult> =
+        results.filter { r -> isDialectVisible(r.lang) }
+
+    private fun filterCognateGroups(groups: List<CognateGroup>): List<CognateGroup> =
+        groups.mapNotNull { g ->
             val filtered = g.members.filter { isDialectVisible(it.lang) }
             if (filtered.isEmpty()) null else g.copy(members = filtered)
         }
-    }
 
     // 搜釋義：按字組分組
-    private fun groupResults(results: List<SearchResult>): List<CharGroup> {
-        return results
+    private fun groupResults(results: List<SearchResult>): List<CharGroup> =
+        results
             .groupBy { it.chars }
-            .map { (chars, entries) ->
-                val dialects = entries
-                    .groupBy { it.lang }
-                    .map { (lang, prons) ->
-                        val toneSystem = db.getToneSystem(lang)
-                        val cog = prons.firstOrNull()?.let { p ->
-                            try { db.getCognateGroup(lang, p.ipa) } catch (_: Exception) { null }
-                        }?.let { formatCognate(it) }
-                        DialectEntry(
-                            lang = lang,
-                            sortKey = prons.first().sortKey,
-                            prons = prons.map { PronEntry(ToneFormatter.format(it.ipa, toneSystem), it.note) },
-                            cognate = cog
-                        )
-                    }
-                    .sortedBy { it.sortKey }
-                CharGroup(chars, dialects)
-            }
+            .map { (chars, entries) -> CharGroup(chars, entries.groupByDialect()) }
             .sortedByDescending { it.entries.size }
-    }
 
     // 搜字：不按字組分組，全部合併為一張卡片
     private fun groupCharResults(results: List<SearchResult>, query: String): List<CharGroup> {
         if (results.isEmpty()) return emptyList()
-        val dialects = results
-            .groupBy { it.lang }
+        return listOf(CharGroup(query, results.groupByDialect()))
+    }
+
+    // 同一個方言點的讀音合併成一個 DialectEntry，並按音典排序
+    private fun List<SearchResult>.groupByDialect(): List<DialectEntry> =
+        groupBy { it.lang }
             .map { (lang, prons) ->
                 val toneSystem = db.getToneSystem(lang)
-                val cog = prons.firstOrNull()?.let { p ->
-                    try { db.getCognateGroup(lang, p.ipa) } catch (_: Exception) { null }
+                val cognate = prons.firstOrNull()?.let { p ->
+                    try {
+                        db.getCognateGroup(lang, p.ipa)
+                    } catch (_: Exception) {
+                        null
+                    }
                 }?.let { formatCognate(it) }
                 DialectEntry(
                     lang = lang,
                     sortKey = prons.first().sortKey,
                     prons = prons.map { PronEntry(ToneFormatter.format(it.ipa, toneSystem), it.note) },
-                    cognate = cog
+                    cognate = cognate
                 )
             }
             .sortedBy { it.sortKey }
-        return listOf(CharGroup(query, dialects))
-    }
 
     // Format cognate member IPAs using each member's dialect tone system
     private fun formatCognate(cog: CognateGroup): CognateGroup {
@@ -210,8 +201,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // 搜同源：每個 cognate group 成為一張卡片
-    private fun groupCognateResults(groups: List<CognateGroup>): List<CharGroup> {
-        return groups.map { g ->
+    private fun groupCognateResults(groups: List<CognateGroup>): List<CharGroup> =
+        groups.map { g ->
             val dialects = g.members
                 .groupBy { it.lang }
                 .map { (lang, members) ->
@@ -226,5 +217,4 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                 .sortedBy { it.sortKey }
             CharGroup(g.semanticLabel, dialects, g.groupId)
         }
-    }
 }

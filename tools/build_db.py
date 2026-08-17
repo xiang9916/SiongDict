@@ -18,7 +18,7 @@ from collections import defaultdict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MCPDICT_DIR = os.path.normpath(
-    os.path.join(SCRIPT_DIR, "..", "..", "MCPDict-new", "tools", "tables")
+    os.path.join(SCRIPT_DIR, "..", "..", "MCPDict-master", "tools", "tables")
 )
 DEFAULT_OUTPUT = os.path.normpath(
     os.path.join(SCRIPT_DIR, "..", "app", "src", "main", "assets", "databases", "siongdict.db")
@@ -43,7 +43,7 @@ FQ_KEYWORDS = [
 def matches_fq(d):
     dt2 = d.get("地圖集二分區", "")
     yd = d.get("音典分區", "")
-    if "湘語" in dt2:
+    if FQ_KEYWORDS[0] in dt2:
         return True
     for kw in FQ_KEYWORDS[1:]:
         if kw in yd:
