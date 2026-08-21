@@ -43,28 +43,27 @@ def build_variants():
             if not src or not dsts:
                 continue
             for dst in dsts:
-                if dst:
-                    adj[src].add(dst)
-                    adj[dst].add(src)
+                adj[src].add(dst)
+                adj[dst].add(src)
 
-    # Build connected components (union-find style)
+    # Build connected components (graph traversal)
     visited = set()
     components = []
     for char in adj:
         if char in visited:
             continue
-        # BFS to find all connected chars
-        queue = [char]
+        # Traverse to collect all chars connected to this one
+        stack = [char]
         group = set()
-        while queue:
-            c = queue.pop()
+        while stack:
+            c = stack.pop()
             if c in visited:
                 continue
             visited.add(c)
             group.add(c)
             for neighbor in adj[c]:
                 if neighbor not in visited:
-                    queue.append(neighbor)
+                    stack.append(neighbor)
         if len(group) > 1:
             components.append(sorted(group))
 
@@ -72,7 +71,7 @@ def build_variants():
     result = {}
     for group in components:
         for char in group:
-            result[char] = sorted(group)
+            result[char] = group
 
     with open(OUTPUT, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, separators=(",", ":"))

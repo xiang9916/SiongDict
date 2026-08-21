@@ -16,6 +16,9 @@ object ToneFormatter {
     // Regex: group 1 = syllable (non-digit prefix), group 2 = tone category
     private val pattern = Pattern.compile("^(.+?)([0-9]{1,2}[a-z=-]?)$")
 
+    // MCPDict tone system JSON arrays always carry 5 style fields; [0] is the tone value
+    private const val TONE_STYLE_FIELD_COUNT = 5
+
     // Unicode tone bar characters for digits 0-6
     private val toneBars = charArrayOf(
         '\u0294', // 0 -> ʔ
@@ -65,36 +68,28 @@ object ToneFormatter {
         val tone = matcher.group(2)
         if (tone.isNullOrEmpty()) return ipa
 
-        // Separate tone digit from suffix (-/=) for correct tone system lookup
-        val toneDigit = tone.replace(Regex("[^0-9]"), "")
-        val toneSuffix = tone!!.replace(Regex("[0-9]"), "")
+        // Split tone category digits from modifiers (-/=) for tone system lookup
+        val toneDigit = tone.filter { it in '0'..'9' }
+        val toneSuffix = tone.filter { it !in '0'..'9' }
+
+        // Tone 0 (glottal/light tone) drops the digit entirely
+        fun fallback() = if (toneDigit == "0") base else base + toneDigit + toneSuffix
 
         // Look up the tone category in the tone system JSON
         val styles = try {
-            var arr = toneSystem.optJSONArray(toneDigit)
-            // If not found by digit alone, try full key (e.g., "2a" for 湘鄉)
-            if (arr == null && toneSuffix.isNotEmpty()) {
-                arr = toneSystem.optJSONArray(tone)
-            }
-            arr
+            toneSystem.optJSONArray(toneDigit)
+                // If not found by digit alone, try the full key (e.g. "2a" for 湘鄉)
+                ?: toneSystem.optJSONArray(tone)
         } catch (e: Exception) {
             null
         }
 
-        // If not found in the tone system, fall back to raw IPA
-        if (styles == null || styles.length() != 5) {
-            if (toneDigit == "0") return base
-            return base + toneDigit + toneSuffix
-        }
+        if (styles == null || styles.length() != TONE_STYLE_FIELD_COUNT) return fallback()
 
         // styles[0] = tone value (e.g. "334")
         val tv = styles.optString(0, "")
-        if (tv.isEmpty()) {
-            if (toneDigit == "0") return base
-            return base + toneDigit + toneSuffix
-        }
+        if (tv.isEmpty()) return fallback()
 
-        val contour = toneValueToContour(tv)
-        return base + contour + toneDigit + toneSuffix
+        return base + toneValueToContour(tv) + toneDigit + toneSuffix
     }
 }

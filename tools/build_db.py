@@ -26,9 +26,9 @@ DEFAULT_OUTPUT = os.path.normpath(
 
 # ─── Filtering ───
 
-# Condition 1: match any of these 音典分區 keywords, or 湘語 in 地圖集二分區
-FQ_KEYWORDS = [
-    "湘語",
+# Condition 1: 湘語 in 地圖集二分區, or any YD_KEYWORDS hit in 音典分區
+DT2_KEYWORDS = ("湘語",)
+YD_KEYWORDS = (
     "湘贛－岳州",
     "湘贛－北湘",
     "湘贛－雪峰",
@@ -37,18 +37,15 @@ FQ_KEYWORDS = [
     "湘南",
     "道州",
     "鄉話",
-]
+)
 
 
 def matches_fq(d):
     dt2 = d.get("地圖集二分區", "")
-    yd = d.get("音典分區", "")
-    if FQ_KEYWORDS[0] in dt2:
+    if any(kw in dt2 for kw in DT2_KEYWORDS):
         return True
-    for kw in FQ_KEYWORDS[1:]:
-        if kw in yd:
-            return True
-    return False
+    yd = d.get("音典分區", "")
+    return any(kw in yd for kw in YD_KEYWORDS)
 
 
 def matches_geo(d):
@@ -135,6 +132,10 @@ def sort_dialects(dialects):
     return dict(sorted(dialects.items(), key=sort_key))
 
 
+TRAILING_TONE_MARKS_RE = re.compile(r"[-=]+$")
+TONE_TAIL_RE = re.compile(r"\d.*$")
+
+
 def read_tsv(mcpdict_dir, 簡稱):
     tsv_path = os.path.join(mcpdict_dir, "output", f"{簡稱}.tsv")
     if not os.path.exists(tsv_path):
@@ -149,9 +150,8 @@ def read_tsv(mcpdict_dir, 簡稱):
             if len(parts) < 2:
                 continue
             字 = parts[0]
-            音 = parts[1]
             # Strip tone modifiers (-/=) from end of reading
-            音 = re.sub(r"[-=]+$", "", 音)
+            音 = TRAILING_TONE_MARKS_RE.sub("", parts[1])
             註 = parts[2] if len(parts) > 2 else ""
             if not 字 or not 音:
                 continue
@@ -194,6 +194,11 @@ def build_database(mcpdict_dir, output_path, dialects):
         % ",".join(info_fields)
     )
 
+    # Positions of the computed (non-metadata) fields inside info_fields
+    idx_char_count = info_fields.index("字數")
+    idx_box_count = info_fields.index("□數")
+    idx_syllable_count = info_fields.index("音節數")
+
     items = []
     info_rows = []
     total_chars = 0
@@ -207,8 +212,7 @@ def build_database(mcpdict_dir, output_path, dialects):
 
         groups = defaultdict(list)
         for 字, 音, 註 in entries:
-            key = (音, 註)
-            groups[key].append(字)
+            groups[(音, 註)].append(字)
 
         for (音, 註), chars in groups.items():
             字組 = " ".join(chars)
@@ -225,16 +229,10 @@ def build_database(mcpdict_dir, output_path, dialects):
                 val = "1" if val else ""
             info_row.append(str(val))
         char_set = set(e[0] for e in entries)
-        idx = info_fields.index("字數")
-        info_row[idx] = str(len(char_set))
-        idx = info_fields.index("□數")
-        info_row[idx] = str(len(char_set & {"□"}))
-        idx = info_fields.index("音節數")
-        syllables = set()
-        for _, 音, _ in entries:
-            base = re.sub(r"\d.*$", "", 音)
-            syllables.add(base)
-        info_row[idx] = str(len(syllables))
+        syllables = {TONE_TAIL_RE.sub("", e[1]) for e in entries}
+        info_row[idx_char_count] = str(len(char_set))
+        info_row[idx_box_count] = "1" if "□" in char_set else "0"
+        info_row[idx_syllable_count] = str(len(syllables))
         info_rows.append(tuple(info_row))
 
     if items:

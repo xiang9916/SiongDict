@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -76,63 +77,21 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                             expanded = showFilterMenu,
                             onDismissRequest = { showFilterMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Checkbox(
-                                            checked = uiState.filterXiangGan,
-                                            onCheckedChange = {
-                                                viewModel.updateFilters(
-                                                    it, uiState.filterZhongShangJiang, uiState.filterXiangHuaTuHua
-                                                )
-                                            }
-                                        )
-                                        Text("湘贛")
-                                    }
-                                },
-                                onClick = {}
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Checkbox(
-                                            checked = uiState.filterZhongShangJiang,
-                                            onCheckedChange = {
-                                                viewModel.updateFilters(
-                                                    uiState.filterXiangGan, it, uiState.filterXiangHuaTuHua
-                                                )
-                                            }
-                                        )
-                                        Text("中上江和藍青")
-                                    }
-                                },
-                                onClick = {}
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Checkbox(
-                                            checked = uiState.filterXiangHuaTuHua,
-                                            onCheckedChange = {
-                                                viewModel.updateFilters(
-                                                    uiState.filterXiangGan, uiState.filterZhongShangJiang, it
-                                                )
-                                            }
-                                        )
-                                        Text("鄉話和土話")
-                                    }
-                                },
-                                onClick = {}
-                            )
+                            FilterCheckboxItem("湘贛", uiState.filterXiangGan) { checked ->
+                                viewModel.updateFilters(
+                                    checked, uiState.filterZhongShangJiang, uiState.filterXiangHuaTuHua
+                                )
+                            }
+                            FilterCheckboxItem("中上江和藍青", uiState.filterZhongShangJiang) { checked ->
+                                viewModel.updateFilters(
+                                    uiState.filterXiangGan, checked, uiState.filterXiangHuaTuHua
+                                )
+                            }
+                            FilterCheckboxItem("鄉話和土話", uiState.filterXiangHuaTuHua) { checked ->
+                                viewModel.updateFilters(
+                                    uiState.filterXiangGan, uiState.filterZhongShangJiang, checked
+                                )
+                            }
                         }
                         IconButton(onClick = { showInfoDialog = true }) {
                            Icon(
@@ -179,7 +138,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                 },
                 singleLine = true,
                 keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
-                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search)
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
             )
 
             // Mode selector
@@ -243,7 +202,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                     ) {
                         itemsIndexed(
                             uiState.results,
-                            key = { _, group -> "${group.chars}_${group.subtitle}" }
+                            key = { _, group -> groupKey(group) }
                         ) { _, group ->
                             ResultCard(group)
                         }
@@ -265,9 +224,9 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                         ) {
                             itemsIndexed(
                                 uiState.results,
-                                key = { _, group -> "${group.chars}_${group.subtitle}" }
+                                key = { _, group -> groupKey(group) }
                             ) { index, group ->
-                                val navText = group.chars.replace(" ", "").take(2)
+                                val navText = displayTitle(group.chars).take(2)
                                 Text(
                                     text = navText,
                                     fontSize = 11.sp,
@@ -290,6 +249,61 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     if (showInfoDialog) {
         InfoDialog(viewModel = viewModel, onDismiss = { showInfoDialog = false })
     }
+}
+
+/** Stable LazyColumn key for a result card. */
+private fun groupKey(group: CharGroup) = "${group.chars}_${group.subtitle}"
+
+/** Card title with the inter-character spaces of 字組 removed. */
+private fun displayTitle(chars: String) = chars.replace(" ", "")
+
+/** One checkbox row inside the dialect-filter dropdown. */
+@Composable
+private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+                Text(label)
+            }
+        },
+        onClick = {}
+    )
+}
+
+/** Small copy button: copies the text built by [buildText] and shows a toast. */
+@Composable
+private fun CopyButton(buildText: () -> String) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    DisableSelection {
+        IconButton(
+            onClick = {
+                clipboardManager.setText(AnnotatedString(buildText()))
+                Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier.size(24.dp)
+        ) {
+            Icon(
+                Icons.Default.ContentCopy,
+                contentDescription = "複製同源詞",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.tertiary
+            )
+        }
+    }
+}
+
+/**
+ * Zero-height newline: participates in text selection so copied text keeps
+ * line breaks between rows, without adding visual space.
+ */
+@Composable
+private fun LineGap() {
+    Text(text = "\n", modifier = Modifier.height(0.dp).clipToBounds())
 }
 
 @Composable
@@ -415,27 +429,20 @@ private fun InfoDialog(
     }
 }
 
+/** Return the first "### version" section of the changelog (header line included). */
 private fun extractLatestChangelog(changelog: String): String {
     val lines = changelog.lines()
-    var firstIdx = -1
-    var endIdx = lines.size
-    for (i in lines.indices) {
-        if (lines[i].startsWith("### ")) {
-            if (firstIdx == -1) {
-                firstIdx = i
-            } else {
-                endIdx = i
-                break
-            }
-        }
-    }
-    if (firstIdx == -1) return changelog
-    return lines.subList(firstIdx, endIdx).joinToString("\n").trim()
+    val first = lines.indexOfFirst { it.startsWith("### ") }
+    if (first == -1) return changelog
+    val rest = lines.drop(first)
+    val next = rest.indexOfFirst { it.startsWith("### ") }
+    val section = if (next == -1) rest else rest.subList(0, next)
+    return section.joinToString("\n").trim()
 }
 
 @Composable
 private fun ResultCard(group: CharGroup) {
-    val displayChars = group.chars.replace(" ", "")
+    val displayChars = displayTitle(group.chars)
     var collapsed by rememberSaveable { mutableStateOf(false) }
     val titleSize = when {
         displayChars.length <= 2 -> 28.sp
@@ -502,25 +509,7 @@ private fun ResultCard(group: CharGroup) {
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.weight(1f)
                     )
-                   val context = LocalContext.current
-                   val clipboardManager = LocalClipboardManager.current
-                    DisableSelection {
-                    IconButton(
-                        onClick = {
-                            val exportText = buildCharGroupExportText(group)
-                            clipboardManager.setText(AnnotatedString(exportText))
-                            Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = "複製同源詞",
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                    }
+                    CopyButton { buildCharGroupExportText(group) }
                 }
             }
 
@@ -597,10 +586,7 @@ private fun DialectBlock(dialect: DialectEntry) {
                     .fillMaxWidth()
                     .padding(start = 14.dp)
             )
-            Text(
-                text = "\n",
-                modifier = Modifier.height(0.dp).clipToBounds()
-            )
+            LineGap()
         }
         // 同源词展开
         if (expanded && dialect.cognate != null) {
@@ -622,8 +608,6 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
            modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp)
        ) {
-           val context = LocalContext.current
-           val clipboardManager = LocalClipboardManager.current
            Row(
                modifier = Modifier.fillMaxWidth(),
                verticalAlignment = Alignment.CenterVertically
@@ -640,28 +624,9 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                   fontWeight = FontWeight.Medium,
                   modifier = Modifier.weight(1f)
               )
-                DisableSelection {
-               IconButton(
-                   onClick = {
-                       val exportText = buildCognateExportText(group)
-                       clipboardManager.setText(AnnotatedString(exportText))
-                       Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
-                   },
-                   modifier = Modifier.size(24.dp)
-               ) {
-                   Icon(
-                       Icons.Default.ContentCopy,
-                       contentDescription = "複製同源詞",
-                       modifier = Modifier.size(14.dp),
-                       tint = MaterialTheme.colorScheme.tertiary
-                   )
-               }
-                }
+                 CopyButton { buildCognateExportText(group) }
             }
-            Text(
-                text = "\n",
-                modifier = Modifier.height(0.dp).clipToBounds()
-            )
+            LineGap()
             group.members.forEach { m ->
                 val isCurrent = m.lang == currentLang
                 Row(
@@ -685,10 +650,7 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                                else MaterialTheme.colorScheme.onSurfaceVariant
                    )
                 }
-                Text(
-                    text = "\n",
-                    modifier = Modifier.height(0.dp).clipToBounds()
-                )
+                LineGap()
                 }
             }
         }

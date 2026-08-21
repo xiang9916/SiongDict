@@ -54,6 +54,9 @@ SPECIAL_CHARS = {"□", "〇"}
 # Minimum bridge character count to confirm a correspondence
 MIN_BRIDGE = 3
 
+# Trailing tone modifiers (-/=) stripped from IPA readings
+TRAILING_TONE_MARKS_RE = re.compile(r"[-=]+$")
+
 # ─── Step 1: Semantic grouping ───
 
 SEMANTIC_RULES = [
@@ -268,7 +271,8 @@ def load_manual_entries(output_path):
                      FROM cognates WHERE source = 'manual'""")
         rows = c.fetchall()
         conn.close()
-        return [{"chars": r[0] or "", "lang": r[1] or "", "ipa": re.sub(r"[-=]+$", "", r[2] or ""),
+        return [{"chars": r[0] or "", "lang": r[1] or "",
+                 "ipa": TRAILING_TONE_MARKS_RE.sub("", r[2] or ""),
                  "cognate_group": r[3], "note": r[4] or "",
                  "semantic_tag": r[5] or "", "semantic_label": r[6] or ""} for r in rows]
     except Exception:
@@ -302,7 +306,7 @@ def insert_manual_entries(conn, manual_entries, db_path):
     siong_conn = sqlite3.connect(db_path)
 
     for me in manual_entries:
-        ipa_clean = re.sub(r"[-=]+$", "", me["ipa"])
+        ipa_clean = TRAILING_TONE_MARKS_RE.sub("", me["ipa"])
         ipa_parsed = parse_ipa(ipa_clean)
         if ipa_parsed:
             init, final, tone = ipa_parsed[0]

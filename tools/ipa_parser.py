@@ -76,13 +76,11 @@ def parse_syllable(syll):
 
 
 def parse_ipa(ipa_str):
-    """Parse an IPA string that may contain multiple variants.
+    """Parse an IPA reading into a single-syllable tuple list.
 
-    Returns a list of (initial, final, tone) tuples, one per syllable.
     If the string contains variant readings (separated by /), only the
-    first variant is parsed.
-
-    Returns empty list if nothing could be parsed.
+    first variant is parsed. Returns [(initial, final, tone)] as a list
+    for API compatibility, or an empty list if nothing could be parsed.
     """
     if not ipa_str:
         return []
@@ -96,8 +94,6 @@ def parse_ipa(ipa_str):
         return [result]
 
     return []
-
-
 
 
 def get_tone_category(tone_str):

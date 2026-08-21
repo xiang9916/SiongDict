@@ -43,11 +43,11 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     init {
-        val app = getApplication<Application>()
+        val appContext = getApplication<Application>()
         val appVersion = runCatching {
             @Suppress("DEPRECATION")
-            val pInfo = app.packageManager.getPackageInfo(app.packageName, 0)
-            pInfo.versionName ?: ""
+            appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+                .versionName ?: ""
         }.getOrDefault("")
         val outdated = db.isDatabaseOutdated()
         _uiState.value = _uiState.value.copy(dbOutdated = outdated, appVersion = appVersion)
@@ -79,8 +79,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val query = _uiState.value.query.trim()
         if (query.isEmpty()) return
         val mode = _uiState.value.mode
-        val s = _uiState.value
-        val filterEnabled = !s.filterXiangGan || !s.filterZhongShangJiang || !s.filterXiangHuaTuHua
+        val state = _uiState.value
+        val filterEnabled = !state.filterXiangGan || !state.filterZhongShangJiang || !state.filterXiangHuaTuHua
         _uiState.value = _uiState.value.copy(loading = true, searched = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             try {
