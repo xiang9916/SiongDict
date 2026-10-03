@@ -9,6 +9,8 @@ build/
 dist/
 *.db
 *.db-journal
+# 資料庫自動備份 cognates.db.bak-YYYYMMDD-HHMMSS：勿入庫、勿進 APK
+*.db.bak-*
 *.iml
 *.keystore
 *.xls

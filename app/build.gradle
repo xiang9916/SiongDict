@@ -12,8 +12,8 @@ android {
         applicationId "org.siongdict.app"
         minSdk 24
        targetSdk 35
-       versionCode 37
-       versionName "0.4.3"
+       versionCode 38
+       versionName "0.4-rc.4"
     }
 
     buildTypes {
