@@ -50,9 +50,13 @@
 
 ## 六、構建方法
 
+> 完整的開發者說明——含 fork 後重建資料庫、發版流程與已知陷阱——見倉庫根目錄的 `AGENTS.md`。
+
+**前置需求**：JDK 17、Android SDK（`platforms/android-35`、`build-tools/35.0.0`）、Python 3。
+
 ```bash
-# 設定 SDK 路徑（編輯 local.properties）
-sdk.dir=/path/to/android-sdk
+# 設定 SDK 路徑（local.properties 不入庫，需自行建立）
+echo "sdk.dir=/path/to/android-sdk" > local.properties
 
 # 構建 Debug APK
 ./gradlew assembleDebug
@@ -61,11 +65,20 @@ sdk.dir=/path/to/android-sdk
 # app/build/outputs/apk/debug/app-debug.apk
 ```
 
-如需重新構建資料庫：
+⚠️ **資料庫不在倉庫中**：`app/src/main/assets/databases/` 下的 `siongdict.db` 與 `cognates.db` 被 `.gitignore` 的 `*.db` 排除。缺少 `siongdict.db` 時仍可編譯成功，但 APK 一啟動即崩潰，務必先重建：
 
 ```bash
-python3 tools/build_db.py --mcpdict-dir ../MCPDict-master/tools/tables
+# 取得漢字音典（MCPDict）字表，置於與本倉庫平級的目錄
+git clone --filter=blob:none --sparse https://github.com/osfans/MCPDict.git MCPDict-master
+cd MCPDict-master && git sparse-checkout set tools/tables/output tools/tables/data/正字.tsv && cd ..
+
+# 重建資料
+python3 tools/build_db.py          # siongdict.db（字音資料庫）
+python3 tools/build_variants.py    # variants.json（異體字對映）
+python3 tools/cognate_pipeline.py  # cognates.db（同源詞庫）
 ```
+
+`build_db.py` 可用 `--mcpdict-dir` 指定字表位置；`build_variants.py` 的上游路徑寫死於原始碼中，需與上述目錄結構一致。對外發佈的安裝檔一律由 `assembleDebug` 產出（沿用 debug 簽章）。
 
 ## 七、免責聲明
 

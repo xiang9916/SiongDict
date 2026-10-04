@@ -2,6 +2,8 @@ gen
 publish
 .idea/
 .gradle/
+# Kotlin daemon 崩潰日誌會寫入建置機的絕對路徑，勿入庫
+.kotlin/
 keystore.properties
 local.properties
 warnings*.txt
