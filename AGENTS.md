@@ -12,6 +12,7 @@
 - 線上倉庫 `xiang9916/SiongDict`；`master` 是唯一分支，**沒有** `develop`、也**沒有** `.github/workflows`（無 CI）。
 - 資料規模：**480 個方言點**、**596,822 條讀音**、122,853 組同音字；同源詞 **162 組 / 1,884 條**（1,822 人工 + 62 自動）。
 - git 倉庫根 = 本文件所在目錄；父目錄不是倉庫，勿在父目錄跑 git 命令。
+- `.git` 約 **9 MB**：2026-10-04 重寫過一次歷史，把非程式碼大檔全部剔除（見 §7.8）。**該日之前的 clone 已與遠端分岔，請重新 clone，勿從舊副本推送。**
 - 全部讀音資料來自 [漢字音典 MCPDict](https://github.com/osfans/MCPDict)。本專案只做三件事：篩選湘語相關方言點、重建檢索索引、人工標註同源詞。
 
 ## 1. 🔴 紅線：這些東西不進倉庫
@@ -21,7 +22,7 @@
 | 建置機絕對路徑 | `/Users/<使用者名>/…`、`/home/<使用者名>/…` 不得出現在任何被跟蹤檔案中，**日誌與例外堆疊也算**。 |
 | 簽章憑證 | `*.keystore`、`*.jks`、`keystore.properties`、`signingkey.jks` 全在 `.gitignore`。本倉庫**不含任何簽章檔**，也不要 `git add -f` 進去。 |
 | 資料庫二進位 | `*.db` 與 `*.db.bak-*` 在 `.gitignore`（理由見 §3）。V0.4.3 曾誤入 5 個 `cognates.db.bak-*`，還被打進 APK；已於 V0.4-rc.4 清除。 |
-| 大型中間資料 | `tools/tables/`（MCPDict 上游字表，單檔最大 47 MB）、`app/src/main/assets/maps/` 曾進過歷史並已刪除，**不要再提交**。`.git` 現在約 880 MB，全是這些殘留 blob，完整 clone 並不小。 |
+| 大型中間資料 | `tools/tables/`（MCPDict 上游字表，單檔最大 47 MB）、`app/src/main/assets/maps/`、字型 `*.ttf/*.otf`、`*.geojson`、`*.tsv`、`*.apk`、舊 `assets/databases/` 都曾進過歷史，**不要再提交**（否則 `.git` 又會暴漲，得再重寫一次歷史，見 §7.8）。 |
 | Release notes | 它掛在 GitHub 上、不在倉庫裡，但同樣按上表自查。 |
 
 發版前自查（除 `.gitignore` 自身列舉關鍵字屬預期命中外，其餘應零命中）：
@@ -201,6 +202,12 @@ debug keystore 是**每台機器各自生成**的（`~/.android/debug.keystore`�
 5. 方言島（如分區歸「閩」的點）預設不顯示，要在 App 裡勾選對應篩選才會出現——`SearchViewModel.isDialectVisible()` 按「音典分區」前綴分派，`閩`／`嶺東`／`嶺南` 歸在「湘南土話」那一組開關下。
 6. Gradle 開了 `org.gradle.configuration-cache=true`；AGP 8.7.3 與 Kotlin 2.0.21 是硬綁定，`org.jetbrains.kotlin.android` 與 `org.jetbrains.kotlin.plugin.compose` 兩個 plugin 版本必須保持一致。
 7. 資料庫備份檔 `*.db.bak-YYYYMMDD-HHMMSS` 由管線自動產生，留在 `app/src/main/assets/databases/` 會被一起打進 APK——App 根本不讀它們。已在 `.gitignore` 加 `*.db.bak-*`，仍請在出包前確認該目錄只剩兩個 `.db`。
+8. **2026-10-04 重寫過一次 git 歷史**（`git-filter-repo`），剔除非程式碼 blob：`--strip-blobs-bigger-than 1M`，加 `*.tsv`／`*.geojson`／`*.ttf`／`*.otf`／`*.apk`／`*.db`／`*.csv`／`*.xlsx`／`*.zip`／`*.DS_Store` 等 glob，加歷史遺留目錄 `tools/tables`、`方言.geojson`、`bin`、`font`、`cgi`、`libs`、`gen`、`.settings`、`.kotlin`、`assets/databases`、`app/src/main/assets/maps`、`app/src/main/res/font`。結果：`.git` 由 **882 MB 降至 9 MB**，提交數 1672 → 740（被剪掉的是只動數據、重寫後變空的提交，程式碼提交全在），19 個 tag 全部重寫並強推。**重寫後 `HEAD^{tree}` 與重寫前逐位元組相同**（`4b7b0c941040efab83d031611b88a890720222f5`），程式碼內容零改動；全新 clone 可以正常 `assembleDebug` 並打出帶資料庫的 APK。三條後果要記住：
+   - 舊 clone 的歷史已與遠端分岔，**不要再從舊副本 push**，重新 clone；
+   - 別再往倉庫提交大檔，否則又要重寫一次歷史（`git-filter-repo` 需另裝，`pip3 install git-filter-repo`）；
+   - GitHub Release 掛在 tag 名稱上，重寫 tag 不影響 Release 本體（0.4-rc.4 的 APK 仍在，未受影響）。
+
+   順帶：這次重寫也把歷史上的 `.kotlin/errors/errors-*.log`（含建置機家目錄路徑）一併抹掉了。
 
 ---
 
