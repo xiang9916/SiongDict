@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 開發須知
 
-> 給在此倉庫工作的 AI／開發者。**2026-10-04 匯總**，對應 `0.4-rc.4`。
+> 給在此倉庫工作的 AI／開發者。**2026-10-05 匯總**，對應 `0.4-rc.5`。
 >
 > ⚠️ **本文件在倉庫內、會隨倉庫一起公開** —— 所以這裡只寫可公開的事實：不含建置機絕對路徑（`/Users/<使用者名>/…`）、
 > 不含任何簽章憑證或其口令、不含未公開的個人資料。動程式碼、資料或發版之前先讀一遍。
@@ -8,9 +8,9 @@
 ## 0. 現狀速覽
 
 - 原生 Android App（Kotlin + Jetpack Compose + Material 3），離線 SQLite FTS5 全文檢索，無需聯網。
-- 當前版本 **0.4-rc.4**：`versionCode 38`、`versionName "0.4-rc.4"`，只存在於 `app/build.gradle`。
+- 當前版本 **0.4-rc.5**：`versionCode 39`、`versionName "0.4-rc.5"`，只存在於 `app/build.gradle`。
 - 線上倉庫 `xiang9916/SiongDict`；`master` 是唯一分支，**沒有** `develop`、也**沒有** `.github/workflows`（無 CI）。
-- 資料規模：**480 個方言點**、**596,822 條讀音**、122,853 組同音字；同源詞 **162 組 / 1,884 條**（1,822 人工 + 62 自動）。
+- 資料規模：**480 個方言點**、**596,822 條讀音**、122,853 組同音字；同源詞 **140 組 / 1,825 條**（全數人工標註，無自動條目）。
 - git 倉庫根 = 本文件所在目錄；父目錄不是倉庫，勿在父目錄跑 git 命令。
 - `.git` 約 **9 MB**：2026-10-04 重寫過一次歷史，把非程式碼大檔全部剔除（見 §7.8）。**該日之前的 clone 已與遠端分岔，請重新 clone，勿從舊副本推送。**
 - 全部讀音資料來自 [漢字音典 MCPDict](https://github.com/osfans/MCPDict)。本專案只做三件事：篩選湘語相關方言點、重建檢索索引、人工標註同源詞。
@@ -140,6 +140,8 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 `cognate_pipeline.py` 頂部的 `LABEL_MAP` 是自動義類的中文標籤表（tag → 標籤），新增自動義類時要補一條。
 
+旁邊的 `SUPPRESSED_SEMANTIC_TAGS` 是**停用清單**：清單裡的 tag 不再自動生成義類組，目前只含 `HIDE`。2026-10-05 撤下了 23 個 `HIDE_*` 自動組（標籤同為「躲藏/捉迷藏」，62 條），但 pipeline 每次重建都會把它們重新算出來——**只刪資料庫裡的行是刪不掉的，必須在這裡擋**。反過來，要恢復某個自動義類，把它從這個集合裡拿掉即可。
+
 維護者另有一套本機技能（同韻母比較判歸音類、橋字驗證、人工編輯同源詞、CSV 匯出）——**不隨倉庫分發**，倉庫內的 `tools/*.py` 才是唯一事實來源。
 
 ## 6. 版本號與發版
@@ -154,6 +156,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4.2 | 36 |
 | 0.4.3 | 37 |
 | 0.4-rc.4 | 38 |
+| 0.4-rc.5 | 39 |
 
 `versionName` 自 0.4-rc.4 起採 `0.4-rc.N` 形式（取代原先的 `0.4.N` 遞增）；0.4.4 從未出包，所以接在 0.4.3 後面的是 `0.4-rc.4` / code 38，而不是 39。
 
@@ -164,17 +167,23 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 ```bash
 export JAVA_HOME=/path/to/jdk-17
 ./gradlew assembleDebug
-cp app/build/outputs/apk/debug/app-debug.apk /tmp/<version>.apk
+cp app/build/outputs/apk/debug/app-debug.apk "publish/湘典-debug-<version>.apk"
 ```
+
+**暫存一律放 `publish/`，不要放 `/tmp`** —— macOS 開機時會清空 `/tmp`，放那裡的 APK 與資料庫備份重開機就沒了（`publish/` 已 gitignore，不會進倉庫）。
 
 **對外一律發 debug 簽章的 APK。** `app/build.gradle` 的 `release` buildType 沒有 `signingConfig`，`assembleRelease` 產出的是**未簽章** APK，裝不上。
 
 ### 發 Release
 
 ```bash
+# 0) 清掉上一版留下的資料庫備份（回滾點用到下一次發版為止）
+ls -la publish/*.db.bak-*   # 先看一眼再刪
+rm -f publish/*.db.bak-*
+
 git tag <version>                    # lightweight tag，不要 annotated
 git push origin master <version>
-gh release create <version> /tmp/<version>.apk \
+gh release create <version> "publish/湘典-debug-<version>.apk" \
   --repo xiang9916/SiongDict \
   --title "<version>" \
   --notes-file <notes> \
