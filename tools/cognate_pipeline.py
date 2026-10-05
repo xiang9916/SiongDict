@@ -65,6 +65,20 @@ SEMANTIC_RULES = [
     (r"^躲~?$|^躲[,，]|藏.*躲|躲.*藏|隱藏|隐藏|藏匿", "HIDE"),
 ]
 
+# 停用自動分組的義類（2026-10-05）。
+#
+# HIDE 的人工分組（HIDE_dzɔŋ2、HIDE_ma1、HIDE_paŋ5、HIDE_piaŋ5、HIDE_pɤu6、
+# HIDE_tsia5、HIDE_tsʰia1、HIDE_xua5）是人工整理確認過的結果，已固化為
+# source='manual'。2026-10-03 換成「按韻母分組」的新演算法後，重跑管線又額外生出
+# 23 個 HIDE_* 組（HIDE_a、HIDE_o、HIDE_ua …），與人工結果重複，已於 2026-10-05 整批刪除。
+#
+# 為什麼要在這裡關、而不是只改資料庫：build_cognates_db() 每次都會 os.remove()
+# 整個 cognates.db 重建，只有 source='manual' 會被 Step 0 救回。單獨刪掉資料庫裡
+# 的 auto 行，下次重跑就會全部回來——這正是「刪了又恢復」的成因。
+#
+# 置回 set() 即恢復自動分組。
+SUPPRESSED_SEMANTIC_TAGS = {"HIDE"}
+
 
 def extract_semantic_tag(note):
     if not note:
@@ -84,7 +98,7 @@ def build_semantic_groups(db_path):
     c.execute("SELECT 字組, 語言, 讀音, 註釋, 排序 FROM langs")
     for chars, lang, ipa, note, sort_key in c.fetchall():
         tag = extract_semantic_tag(note)
-        if not tag:
+        if not tag or tag in SUPPRESSED_SEMANTIC_TAGS:
             continue
         parsed = parse_ipa(ipa)
         if not parsed:
