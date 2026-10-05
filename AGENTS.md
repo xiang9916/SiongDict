@@ -167,10 +167,12 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 ```bash
 export JAVA_HOME=/path/to/jdk-17
 ./gradlew assembleDebug
-cp app/build/outputs/apk/debug/app-debug.apk "publish/湘典-debug-<version>.apk"
+cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 ```
 
 **暫存一律放 `publish/`，不要放 `/tmp`** —— macOS 開機時會清空 `/tmp`，放那裡的 APK 與資料庫備份重開機就沒了（`publish/` 已 gitignore，不會進倉庫）。
+
+**上傳用的檔名必須是純 ASCII。** `gh release` 不會報錯，但會把非 ASCII 檔名吃掉一大截：2026-10-05 用 `publish/湘典-debug-0.4-rc.5.apk` 上傳，asset 名稱變成 `-debug-0.4-rc.5.apk`，得刪掉重傳。一律先複製成 `publish/<version>.apk` 再上傳。
 
 **對外一律發 debug 簽章的 APK。** `app/build.gradle` 的 `release` buildType 沒有 `signingConfig`，`assembleRelease` 產出的是**未簽章** APK，裝不上。
 
@@ -183,7 +185,7 @@ rm -f publish/*.db.bak-*
 
 git tag <version>                    # lightweight tag，不要 annotated
 git push origin master <version>
-gh release create <version> "publish/湘典-debug-<version>.apk" \
+gh release create <version> "publish/<version>.apk" \
   --repo xiang9916/SiongDict \
   --title "<version>" \
   --notes-file <notes> \
