@@ -153,6 +153,8 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 - 組名後綴是**音類標籤**，**不保證等於組內某個成員的今讀**：`Press_gin6`/`gin6`/`ɣan6`/`dzen6` 用的是中古音類名，`Curse_tʂʰak8`（成員今讀是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成員是 sa1/sa5/sa7…）、`SetUp_tun5`（成員是 tən5/ten5/tuen5/tin5…）用的是該音類的代表讀音。2026-10-08 審計時 141 組裡有 100 組如此，是正常結構，不要當成錯名去改；
 - `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是這條規則的實作，自動分組與人工條目都走它。
 
+**「搜同源」結果的排序（2026-10-08 定案）：** 一律按 `cognate_group`（卡片副標那行英文，`<義項>_<音類>`）**不分大小寫的字母序**，與命中相關度、方言點數多寡都無關。實作在 `DictDatabase.searchCognates()` 尾端的 `COGNATE_DISPLAY_ORDER`，改那個比較器就等於改全 App 的顯示順序；組**內**成員仍按 `sort_key`（音典排序），不要一起改。
+
 維護者另有一套本機技能（同韻母比較判歸音類、橋字驗證、人工編輯同源詞、CSV 匯出）——**不隨倉庫分發**，倉庫內的 `tools/*.py` 才是唯一事實來源。
 
 ## 6. 版本號與發版

@@ -19,6 +19,13 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
         private const val COG_NAME = "cognates.db"
         private const val LANG_COLUMNS = "字組, 語言, 讀音, 註釋, 排序"
         private var variantMap: Map<String, List<String>>? = null
+
+        /**
+         * 「搜同源」結果的**固定顯示順序**：按組名（`<義項>_<音類>`，即卡片上那行英文）不分大小寫的字母序。
+         * 不看方言點多寡、也不看命中相關度。同字母序時再比原字串，保證順序完全確定。
+         */
+        private val COGNATE_DISPLAY_ORDER =
+            compareBy<CognateGroup> { it.groupId.lowercase() }.thenBy { it.groupId }
     }
 
     private var toneSystemCache: Map<String, JSONObject>? = null
@@ -301,7 +308,7 @@ class DictDatabase(private val ctx: Context) : SQLiteOpenHelper(
                 }
                 if (members.isNotEmpty()) results.add(CognateGroup(gid, label, members))
             }
-            return results
+            return results.sortedWith(COGNATE_DISPLAY_ORDER)
         } finally {
             cogDb.close()
         }
