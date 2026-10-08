@@ -12,6 +12,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import org.siongdict.app.data.Simplifier
 import org.siongdict.app.ui.SearchScreen
 
 private val SiongDarkRed = Color(0xFF8B0000)
@@ -30,6 +31,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 简体渲染的开关与字表必须在首帧之前就位，否则会闪一下繁体
+        Simplifier.init(applicationContext)
         setContent {
             val darkTheme = isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (darkTheme) DarkColors else LightColors) {

@@ -215,6 +215,6 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 .sortedBy { it.sortKey }
-            CharGroup(g.semanticLabel, dialects, g.groupId)
+            CharGroup(g.semanticLabel, dialects, g.groupId, charsIsLabel = true)
         }
 }

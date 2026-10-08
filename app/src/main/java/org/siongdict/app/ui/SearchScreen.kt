@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.siongdict.app.data.SearchMode
 import org.siongdict.app.data.CharGroup
+import org.siongdict.app.data.Simplifier
 import org.siongdict.app.data.DialectEntry
 import org.siongdict.app.data.CognateGroup
 import androidx.compose.foundation.clickable
@@ -123,11 +124,11 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                placeholder = {
-                   Text(when (uiState.mode) {
+                   Text(disp(when (uiState.mode) {
                        SearchMode.CHAR -> "輸入漢字檢索"
                        SearchMode.COGNATE -> "輸入中英義項或構擬祖型檢索"
                        SearchMode.MEANING -> "輸入注釋內容匹配檢索"
-                   })
+                   }))
                },
                 trailingIcon = {
                     if (uiState.query.isNotEmpty()) {
@@ -152,7 +153,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                     FilterChip(
                         selected = uiState.mode == mode,
                         onClick = { viewModel.updateMode(mode) },
-                        label = { Text(mode.label) }
+                        label = { Text(disp(mode.label)) }
                     )
                 }
             }
@@ -178,18 +179,18 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "查詢出錯",
+                                text = disp("查詢出錯"),
                                 color = MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = uiState.error!!,
+                                text = disp(uiState.error!!),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp
                             )
                         }
                     } else {
-                        Text("無結果", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(disp("無結果"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
@@ -257,6 +258,19 @@ private fun groupKey(group: CharGroup) = "${group.chars}_${group.subtitle}"
 /** Card title with the inter-character spaces of 字組 removed. */
 private fun displayTitle(chars: String) = chars.replace(" ", "")
 
+/**
+ * 要显示的文字：开了「渲染為簡體中文」就转简体。
+ * 读的是 [Simplifier.enabled] 这个 Compose 状态，所以拨动开关会**即时**重组，
+ * 不需要重新检索。字組與使用者輸入不走这里（见 CONTEXT.md）。
+ */
+private fun disp(text: String) = Simplifier.display(text)
+
+/** 搜同源的卡片标题是義項標籤，要转；其余两种模式标题是字組／輸入，不转。 */
+private fun cardTitle(group: CharGroup): String {
+    val title = displayTitle(group.chars)
+    return if (group.charsIsLabel) disp(title) else title
+}
+
 /** One checkbox row inside the dialect-filter dropdown. */
 @Composable
 private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -267,7 +281,7 @@ private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange:
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-                Text(label)
+                Text(disp(label))
             }
         },
         onClick = {}
@@ -283,7 +297,7 @@ private fun CopyButton(buildText: () -> String) {
         IconButton(
             onClick = {
                 clipboardManager.setText(AnnotatedString(buildText()))
-                Toast.makeText(context, "已複製同源詞", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, disp("已複製同源詞"), Toast.LENGTH_SHORT).show()
             },
             modifier = Modifier.size(24.dp)
         ) {
@@ -332,14 +346,14 @@ private fun InfoDialog(
            onDismissRequest = {},
            confirmButton = {},
            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-           title = { Text("重置中") },
+           title = { Text(disp("重置中")) },
             text = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     CircularProgressIndicator()
-                    Text("正在重新載入資料庫…")
+                    Text(disp("正在重新載入資料庫…"))
                 }
             }
         )
@@ -355,13 +369,13 @@ private fun InfoDialog(
        AlertDialog(
            onDismissRequest = { showResetConfirm = false },
            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-           title = { Text("重置資料庫") },
-            text = { Text("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。") },
+           title = { Text(disp("重置資料庫")) },
+            text = { Text(disp("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。")) },
             confirmButton = {
-                TextButton(onClick = { resetting = true }) { Text("重置") }
+                TextButton(onClick = { resetting = true }) { Text(disp("重置")) }
             },
             dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showResetConfirm = false }) { Text(disp("取消")) }
             }
         )
         return
@@ -382,8 +396,8 @@ private fun InfoDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("關於", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = onDismiss) { Text("關閉") }
+                    Text(disp("關於"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = onDismiss) { Text(disp("關閉")) }
                 }
                 HorizontalDivider()
                 Column(
@@ -408,21 +422,41 @@ private fun InfoDialog(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            "重置資料庫",
+                            disp("重置資料庫"),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    // 「渲染為簡體中文 (Beta)」：只影響顯示，不改資料也不改檢索（CONTEXT.md「簡體渲染」）。
+                    // 開關狀態存在 siongdict_prefs，重置資料庫不會動它。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { Simplifier.setEnabled(context, !Simplifier.enabled) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            disp("渲染為簡體中文 (Beta)"),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Switch(
+                            checked = Simplifier.enabled,
+                            onCheckedChange = { Simplifier.setEnabled(context, it) }
                         )
                     }
 
                     HorizontalDivider()
 
                     if (latestChangelog.isNotBlank()) {
-                        Text(latestChangelog, fontSize = 13.sp, lineHeight = 20.sp)
+                        Text(disp(latestChangelog), fontSize = 13.sp, lineHeight = 20.sp)
                     }
 
-                    HorizontalDivider()
-
-                    Text(readmeText, fontSize = 13.sp, lineHeight = 20.sp)
+                    Text(disp(readmeText), fontSize = 13.sp, lineHeight = 20.sp)
                 }
             }
         }
@@ -442,7 +476,7 @@ private fun extractLatestChangelog(changelog: String): String {
 
 @Composable
 private fun ResultCard(group: CharGroup) {
-    val displayChars = displayTitle(group.chars)
+    val displayChars = cardTitle(group)
     var collapsed by rememberSaveable { mutableStateOf(false) }
     val titleSize = when {
         displayChars.length <= 2 -> 28.sp
@@ -484,7 +518,7 @@ private fun ResultCard(group: CharGroup) {
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Text(
-                            text = "${group.entries.size} 點",
+                            text = disp("${group.entries.size} 點"),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -509,7 +543,7 @@ private fun ResultCard(group: CharGroup) {
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.weight(1f)
                     )
-                    CopyButton { buildCharGroupExportText(group) }
+                    CopyButton { Simplifier.display(buildCharGroupExportText(group)) }
                 }
             }
 
@@ -545,7 +579,7 @@ private fun DialectBlock(dialect: DialectEntry) {
                    .background(MaterialTheme.colorScheme.primary)
            )
            Text(
-               text = dialect.lang,
+               text = disp(dialect.lang),
                fontSize = 14.sp,
                fontWeight = FontWeight.Medium,
                color = MaterialTheme.colorScheme.primary
@@ -554,7 +588,7 @@ private fun DialectBlock(dialect: DialectEntry) {
                Spacer(modifier = Modifier.weight(1f))
                 DisableSelection {
                Text(
-                   text = "同源 ${dialect.cognate.members.size} 詞",
+                   text = disp("同源 ${dialect.cognate.members.size} 詞"),
                    fontSize = 11.sp,
                    color = MaterialTheme.colorScheme.tertiary,
                    modifier = Modifier.clickable { expanded = !expanded }
@@ -578,7 +612,7 @@ private fun DialectBlock(dialect: DialectEntry) {
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )) {
-                            append(" ${p.note}")
+                            append(" ${disp(p.note)}")
                         }
                     }
                 },
@@ -613,7 +647,7 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                verticalAlignment = Alignment.CenterVertically
            ) {
                val headerText = if (group.semanticLabel.isNotBlank()) {
-                   "義類：${group.semanticLabel} ${group.groupId}"
+                   "${disp("義類：${group.semanticLabel}")} ${group.groupId}"
                } else {
                    group.groupId
                }
@@ -624,7 +658,7 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                   fontWeight = FontWeight.Medium,
                   modifier = Modifier.weight(1f)
               )
-                 CopyButton { buildCognateExportText(group) }
+                 CopyButton { Simplifier.display(buildCognateExportText(group)) }
             }
             LineGap()
             group.members.forEach { m ->
@@ -634,7 +668,7 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                    Text(
-                       text = m.lang,
+                       text = disp(m.lang),
                        fontSize = 12.sp,
                         lineHeight = 14.sp,
                        color = if (isCurrent) MaterialTheme.colorScheme.primary

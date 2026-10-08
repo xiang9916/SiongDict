@@ -30,11 +30,13 @@
 
 ## 四、主要功能
 
-● **搜字**：輸入漢字檢索，查詢各方言點中的讀音。支持多字搜尋，逐字查詢並按輸入順序依次展示結果；自動聯想繁體、簡體、異體字，各變體分別展示為獨立卡片。
+● **搜字音**：輸入漢字檢索，查詢各方言點中的讀音。支持多字搜尋，逐字查詢並按輸入順序依次展示結果；自動聯想繁體、簡體、異體字，各變體分別展示為獨立卡片。
 
 ● **搜同源**：輸入中英義項或構擬祖型檢索，搜尋跨方言同源詞組。基於橋字驗證法自動識別聲母、韻母、聲調的規律性對應，將不同方言點中語音對應且語義相同的詞歸入同一同源詞組。
 
 ● **搜釋義**：輸入注釋內容匹配檢索，通過釋義關鍵詞反查漢字讀音。
+
+● **渲染為簡體中文 (Beta)**：「關於」面板中的開關，預設關閉。開啟後全部可見文本以簡體顯示（介面文案、註釋、方言名、義類標籤、說明頁與匯出文本），`字組` 與檢索輸入保持原樣、檢索行為不變；開關狀態會保存，`重置資料庫` 不受影響。
 
 搜尋結果以卡片形式展示，包含漢字、方言名稱、IPA 讀音及註釋，並按方言分組排列。
 
@@ -70,15 +72,16 @@ echo "sdk.dir=/path/to/android-sdk" > local.properties
 ```bash
 # 取得漢字音典（MCPDict）字表，置於與本倉庫平級的目錄
 git clone --filter=blob:none --sparse https://github.com/osfans/MCPDict.git MCPDict-master
-cd MCPDict-master && git sparse-checkout set tools/tables/output tools/tables/data/正字.tsv && cd ..
+cd MCPDict-master && git sparse-checkout set tools/tables/output tools/tables/data/正字.tsv app/src/main/assets/opencc && cd ..
 
 # 重建資料
 python3 tools/build_db.py          # siongdict.db（字音資料庫）
 python3 tools/build_variants.py    # variants.json（異體字對映）
+python3 tools/build_simplifier.py  # t2s.json（繁轉簡對映）
 python3 tools/cognate_pipeline.py  # cognates.db（同源詞庫）
 ```
 
-`build_db.py` 可用 `--mcpdict-dir` 指定字表位置；`build_variants.py` 的上游路徑寫死於原始碼中，需與上述目錄結構一致。對外發佈的安裝檔一律由 `assembleDebug` 產出（沿用 debug 簽章）。
+`build_db.py` 可用 `--mcpdict-dir` 指定字表位置；`build_variants.py` 與 `build_simplifier.py` 的上游路徑寫死於原始碼中，需與上述目錄結構一致。對外發佈的安裝檔一律由 `assembleDebug` 產出（沿用 debug 簽章）。
 
 ## 七、免責聲明
 
