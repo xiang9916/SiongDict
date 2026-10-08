@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 開發須知
 
-> 給在此倉庫工作的 AI／開發者。**2026-10-05 匯總**，對應 `0.4-rc.5`。
+> 給在此倉庫工作的 AI／開發者。**2026-10-08 匯總**，程式碼對應 `0.4-rc.6`。
 >
 > ⚠️ **本文件在倉庫內、會隨倉庫一起公開** —— 所以這裡只寫可公開的事實：不含建置機絕對路徑（`/Users/<使用者名>/…`）、
 > 不含任何簽章憑證或其口令、不含未公開的個人資料。動程式碼、資料或發版之前先讀一遍。
@@ -8,9 +8,9 @@
 ## 0. 現狀速覽
 
 - 原生 Android App（Kotlin + Jetpack Compose + Material 3），離線 SQLite FTS5 全文檢索，無需聯網。
-- 當前版本 **0.4-rc.5**：`versionCode 39`、`versionName "0.4-rc.5"`，只存在於 `app/build.gradle`。
+- 當前版本 **0.4-rc.6**：`versionCode 40`、`versionName "0.4-rc.6"`，只存在於 `app/build.gradle`。
 - 線上倉庫 `xiang9916/SiongDict`；`master` 是唯一分支，**沒有** `develop`、也**沒有** `.github/workflows`（無 CI）。
-- 資料規模：**480 個方言點**、**596,822 條讀音**、122,853 組同音字；同源詞 **140 組 / 1,825 條**（全數人工標註，無自動條目）。
+- 資料規模：**480 個方言點**、**596,822 條讀音**、122,853 組同音字；同源詞 **142 組 / 1,930 條**（全數人工標註，無自動條目）。
 - git 倉庫根 = 本文件所在目錄；父目錄不是倉庫，勿在父目錄跑 git 命令。
 - `.git` 約 **9 MB**：2026-10-04 重寫過一次歷史，把非程式碼大檔全部剔除（見 §7.8）。**該日之前的 clone 已與遠端分岔，請重新 clone，勿從舊副本推送。**
 - 全部讀音資料來自 [漢字音典 MCPDict](https://github.com/osfans/MCPDict)。本專案只做三件事：篩選湘語相關方言點、重建檢索索引、人工標註同源詞。
@@ -45,17 +45,19 @@ app/src/main/java/org/siongdict/app/
   data/DictDatabase.kt       assets → 私有目錄複製、FTS5 查詢、變體表載入、版本比對
   data/Models.kt             資料模型
   data/ToneFormatter.kt      聲調格式化
-  ui/SearchScreen.kt         全部 UI（搜字／搜同源／搜釋義；說明頁直接讀 assets 的 README.md、CHANGELOG.md）
+  ui/SearchScreen.kt         全部 UI（搜字音／搜同源／搜釋義；說明頁直接讀 assets 的 README.md、CHANGELOG.md）
   ui/SearchViewModel.kt      檢索、分組、方言篩選
   ui/CognateExport.kt        同源詞 CSV 匯出
 app/src/main/assets/
   databases/siongdict.db    ★ 不入庫，必須自行重建（§3、§4）
   databases/cognates.db     ★ 不入庫，必須自行重建；缺失時 App 不會崩，「搜同源」自動停用
-  variants.json             異體字對映，**已入庫**（由 tools/build_variants.py 產生）
+  variants.json             異體字對映，**已入庫**（由 tools/build_variants.py 產生；繁體、簡體、異體三種寫法互查）
+  t2s.json                  繁→簡對映，**已入庫**（由 tools/build_simplifier.py 產生；含本地「著」保護詞表，見該腳本與 docs/adr/0003）
   README.md / CHANGELOG.md  **已入庫**；App 內「說明」頁讀的就是這兩份，必須與倉庫根目錄的同名檔案逐字節一致
 tools/                       資料管線（純 Python 3 標準庫，無第三方依賴、無 requirements.txt）
   build_db.py                MCPDict 字表 → siongdict.db
-  build_variants.py          正字.tsv → variants.json
+  build_variants.py          正字.tsv + OpenCC 字表 → variants.json（繁簡異體混搜）
+  build_simplifier.py        OpenCC TSPhrases/TSCharacters → t2s.json（簡體渲染）
   cognate_pipeline.py        橋字驗證 → cognates.db
   ipa_parser.py              IPA 聲母／韻母／聲調切分，被 cognate_pipeline.py 匯入
 publish/                     本機出包暫存，已 gitignore
@@ -95,17 +97,18 @@ publish/                     本機出包暫存，已 gitignore
 cd SiongDict
 echo "sdk.dir=/path/to/android-sdk" > local.properties
 
-# 2) 取得 MCPDict 上游字表。只 sparse 出需要的兩塊——完整 clone 是 GB 級
+# 2) 取得 MCPDict 上游字表。只 sparse 出需要的三塊——完整 clone 是 GB 級
 cd ..
 git clone --filter=blob:none --sparse https://github.com/osfans/MCPDict.git MCPDict-master
 cd MCPDict-master
-git sparse-checkout set tools/tables/output tools/tables/data/正字.tsv
+git sparse-checkout set tools/tables/output tools/tables/data/正字.tsv app/src/main/assets/opencc
 cd ../SiongDict
 # ⚠️ MCPDict-master 必須與 SiongDict 平級：tools/*.py 的預設路徑是 ../../MCPDict-master/...
 
-# 3) 重建資料（三個腳本的預設輸出路徑就是 assets 下的正確位置）
+# 3) 重建資料（腳本的預設輸出路徑就是 assets 下的正確位置）
 python3 tools/build_db.py          # 讀 ../MCPDict-master/tools/tables/output/_詳情.json 與 <簡稱>.tsv
-python3 tools/build_variants.py    # 讀 ../MCPDict-master/tools/tables/data/正字.tsv
+python3 tools/build_variants.py    # 讀 正字.tsv + opencc/{ST,TS}Characters、{HK,TW}Variants
+python3 tools/build_simplifier.py  # 讀 opencc/TSPhrases.txt 與 opencc/TSCharacters.txt
 python3 tools/cognate_pipeline.py  # 讀 siongdict.db，輸出 cognates.db
 
 # 4) 出包
@@ -125,7 +128,7 @@ python3 tools/cognate_pipeline.py  # 讀 siongdict.db，輸出 cognates.db
 # 1) 更新 MCPDict（sparse clone 體積小，直接 fetch 即可）
 cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDict
 
-# 2) 重跑 §4 的三支腳本
+# 2) 重跑 §4 的四支腳本
 
 # 3) 同步文件數字
 #    README.md 的「480 個方言點、122,853 組同音字、596,822 條讀音」
@@ -140,7 +143,15 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 `cognate_pipeline.py` 頂部的 `LABEL_MAP` 是自動義類的中文標籤表（tag → 標籤），新增自動義類時要補一條。
 
-旁邊的 `SUPPRESSED_SEMANTIC_TAGS` 是**停用清單**：清單裡的 tag 不再自動生成義類組，目前只含 `HIDE`。2026-10-05 撤下了 23 個 `HIDE_*` 自動組（標籤同為「躲藏/捉迷藏」，62 條），但 pipeline 每次重建都會把它們重新算出來——**只刪資料庫裡的行是刪不掉的，必須在這裡擋**。反過來，要恢復某個自動義類，把它從這個集合裡拿掉即可。
+旁邊的 `SUPPRESSED_SEMANTIC_TAGS` 是**停用清單**：清單裡的 tag 不再自動生成義類組，目前只含 `HIDE`。2026-10-05 撤下了 23 個 `Hide_*` 自動組（當時寫作 `HIDE_*`，標籤同為「躲藏/捉迷藏」，62 條），但 pipeline 每次重建都會把它們重新算出來——**只刪資料庫裡的行是刪不掉的，必須在這裡擋**。反過來，要恢復某個自動義類，把它從這個集合裡拿掉即可。這裡的鍵是 `SEMANTIC_RULES` 吐出的 tag（全大寫），不是組名。
+
+**組名與義項的寫法（2026-10-08 統一，英文一律大駝峰）：**
+
+- `cognate_group` = `<義項>_<音類>`：`Press_gin6`、`Hide_dzɔŋ2`、`Segment_CutOpen_ʂak7`；
+- `semantic_tag` = **義項**，即組名去掉末尾那段音類：`Press`、`Hide`、`Segment_CutOpen`。**一個義項下掛多個音類組是正確結構**——`Hide` 掛 8 組、`Press` 4 組、`Attach`/`Curse`/`Fuck` 各 4 組；
+- 駝峰只作用於**純 A–Z 字母**段；含音標或數字的段原樣保留（`DJNbo2_bo2` 這類音類組不動），多詞複合義項按語義切詞（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）；
+- 組名後綴是**音類標籤**，**不保證等於組內某個成員的今讀**：`Press_gin6`/`gin6`/`ɣan6`/`dzen6` 用的是中古音類名，`Curse_tʂʰak8`（成員今讀是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成員是 sa1/sa5/sa7…）、`SetUp_tun5`（成員是 tən5/ten5/tuen5/tin5…）用的是該音類的代表讀音。2026-10-08 審計時 141 組裡有 100 組如此，是正常結構，不要當成錯名去改；
+- `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是這條規則的實作，自動分組與人工條目都走它。
 
 維護者另有一套本機技能（同韻母比較判歸音類、橋字驗證、人工編輯同源詞、CSV 匯出）——**不隨倉庫分發**，倉庫內的 `tools/*.py` 才是唯一事實來源。
 
@@ -157,6 +168,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4.3 | 37 |
 | 0.4-rc.4 | 38 |
 | 0.4-rc.5 | 39 |
+| 0.4-rc.6 | 40 |
 
 `versionName` 自 0.4-rc.4 起採 `0.4-rc.N` 形式（取代原先的 `0.4.N` 遞增）；0.4.4 從未出包，所以接在 0.4.3 後面的是 `0.4-rc.4` / code 38，而不是 39。
 
