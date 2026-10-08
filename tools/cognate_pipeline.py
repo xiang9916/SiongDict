@@ -67,17 +67,49 @@ SEMANTIC_RULES = [
 
 # 停用自動分組的義類（2026-10-05）。
 #
-# HIDE 的人工分組（HIDE_dzɔŋ2、HIDE_ma1、HIDE_paŋ5、HIDE_piaŋ5、HIDE_pɤu6、
-# HIDE_tsia5、HIDE_tsʰia1、HIDE_xua5）是人工整理確認過的結果，已固化為
+# HIDE 的人工分組（Hide_dzɔŋ2、Hide_ma1、Hide_paŋ5、Hide_piaŋ5、Hide_pɤu6、
+# Hide_tsia5、Hide_tsʰia1、Hide_xua5）是人工整理確認過的結果，已固化為
 # source='manual'。2026-10-03 換成「按韻母分組」的新演算法後，重跑管線又額外生出
-# 23 個 HIDE_* 組（HIDE_a、HIDE_o、HIDE_ua …），與人工結果重複，已於 2026-10-05 整批刪除。
+# 23 個 Hide_* 組（Hide_a、Hide_o、Hide_ua …，當時寫作 HIDE_*），與人工結果重複，
+# 已於 2026-10-05 整批刪除。
 #
 # 為什麼要在這裡關、而不是只改資料庫：build_cognates_db() 每次都會 os.remove()
 # 整個 cognates.db 重建，只有 source='manual' 會被 Step 0 救回。單獨刪掉資料庫裡
 # 的 auto 行，下次重跑就會全部回來——這正是「刪了又恢復」的成因。
 #
+# 這裡的鍵是 SEMANTIC_RULES 吐出的義類 tag（全大寫），不是組名。
 # 置回 set() 即恢復自動分組。
 SUPPRESSED_SEMANTIC_TAGS = {"HIDE"}
+
+# ─── 組名與義項的寫法（2026-10-08 統一）───
+#
+#  組名 = `<義項>_<音類>`，如 Press_gin6、Hide_dzɔŋ2、Segment_CutOpen_ʂak7
+#  義項 = 組名去掉末尾那段音類，如 Press、Hide、Segment_CutOpen
+#
+# 一個義項可以掛多個音類組（Hide 掛 8 組、Press 掛 4 組），義項寫進
+# cognates.semantic_tag。英文一律大駝峰；純 A–Z 字母段才轉換，含音標或數字的段
+# （DJNbo2 這類）原樣保留。多詞複合義項按 TAG_SPLIT 切詞。
+TAG_SPLIT = {
+    "CUTOPEN": "CutOpen",                     # 瓣/破開
+    "DIVINEANSWER": "DivineAnswer",           # 聖筊
+    "DRINKINGHOT": "DrinkingHot",             # 熱水
+    "GETWETINTHERAIN": "GetWetInTheRain",     # 淋雨
+    "LOOKFOR": "LookFor",                     # 尋找
+    "SHORTPERIODOFRAIN": "ShortPeriodOfRain",  # 一陣雨
+}
+
+
+def pascal_tag(seg):
+    """純 A–Z 字母段 → 大駝峰；其他段（音標、數字、DJNbo2 之類）原樣返回。"""
+    if not seg or not (seg.isascii() and seg.isalpha() and seg.isupper()):
+        return seg
+    return TAG_SPLIT.get(seg, seg[0] + seg[1:].lower())
+
+
+def group_prefix(group):
+    """組名去掉末尾的音類段 = 義項（組名只有一段時原樣返回）。"""
+    parts = group.split("_")
+    return "_".join(parts[:-1]) if len(parts) > 1 else group
 
 
 def extract_semantic_tag(note):
@@ -331,9 +363,9 @@ def insert_manual_entries(conn, manual_entries, db_path):
         tag = me.get("semantic_tag", "")
         label = me.get("semantic_label", "")
         if not tag:
-            tag = me["cognate_group"].split("_")[0] if "_" in me["cognate_group"] else me["cognate_group"]
+            tag = group_prefix(me["cognate_group"])
         if not label:
-            label = LABEL_MAP.get(tag, tag)
+            label = LABEL_MAP.get(tag.upper(), tag)
 
         sort_key = lookup_sort_key(me["lang"], ipa_clean, siong_conn)
 
@@ -408,7 +440,7 @@ def build_cognates_db(db_path, output_path):
             if len(cluster) < 2:
                 continue
             rep = cluster[0]
-            base_id = f"{tag}_{rep['final']}"
+            base_id = f"{pascal_tag(tag)}_{rep['final']}"
             group_counter[base_id] += 1
             if group_counter[base_id] > 1:
                 gid = f"{base_id}_{group_counter[base_id]}"
@@ -464,18 +496,20 @@ def build_cognates_db(db_path, output_path):
     group_meta = {}
     for gid, tag, cluster in all_clusters:
         label = LABEL_MAP.get(tag, tag)
+        semantic_tag = pascal_tag(tag)
         for e in cluster:
             c.execute(
                 """INSERT INTO cognates
                    (cognate_group, semantic_tag, semantic_label, chars, lang, ipa, note,
                     sort_key, initial, final, tone_cat, source)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,'auto')""",
-                (gid, tag, label, e["chars"], e["lang"], e["ipa"], e["note"],
+                (gid, semantic_tag, label, e["chars"], e["lang"], e["ipa"], e["note"],
                  e["sortKey"], e["initial"], e["final"], e["tone_cat"])
             )
             inserted += 1
         if gid not in group_meta:
-            group_meta[gid] = (tag, label, len(cluster), len(set(e["lang"] for e in cluster)))
+            group_meta[gid] = (semantic_tag, label, len(cluster),
+                               len(set(e["lang"] for e in cluster)))
 
     # Step 5: Insert manual entries (delete conflicting auto entries first)
     print("Step 5: Inserting manual entries...")

@@ -30,7 +30,7 @@ fun buildCognateExportText(group: CognateGroup): String {
 
 /**
  * Build export text from a CharGroup (used by 搜同源 cards).
- * The subtitle field holds the cognate group ID (e.g. "COVER_ɡɔm4").
+ * The subtitle field holds the cognate group ID (e.g. "Cover_ɡɔm4").
  */
 fun buildCharGroupExportText(group: CharGroup): String {
     val sb = StringBuilder()
