@@ -393,6 +393,40 @@ def insert_manual_entries(conn, manual_entries, db_path):
         print(f"    {gid}: {count}")
 
 
+# ─── 臨時修補：零陵聲調編號不可用（2026-10-13）───
+#
+# ⚠️ 本段是臨時修補，上游修好之後連同呼叫點一起刪掉。
+#   【待辦】當 MCPDict 零陵聲調修復為 12356 時，重新搜索零陵聲調為 5 和 6 的同源詞組，
+#          並再修復刪除本段代碼。
+#
+# 背景：MCPDict 目前把零陵的聲調編成 1／2／3／4／5 連排（全庫零陵讀音只出現這五個調號），
+# 而該點正確的調類系統應為 1／2／3／5／6 —— 也就是現行的「4」「5」兩調究竟代表哪個調類
+# 並不可信。凡 lang='零陵' 且 tone_cat ∈ {4,5} 的同源詞條目一律不得留在庫裡，故每次建庫都在
+# 這裡清掉；待上游改成 12356 後，改以調 5／6 重新撈候選、逐條複核後再入組。
+#
+# 為什麼要寫在這裡而不是只改資料庫：build_cognates_db() 每次都會 os.remove() 整個
+# cognates.db 重建，只有 source='manual' 會被 Step 0 救回；理由同 SUPPRESSED_SEMANTIC_TAGS。
+ZERO_LING_UNUSABLE_TONES = ("4", "5")
+
+
+def drop_unusable_zero_ling_entries(conn):
+    """（臨時）刪除零陵調類 4／5 的同源詞條目——見上方待辦，上游修復後整個刪除。"""
+    c = conn.cursor()
+    doomed = c.execute(
+        "SELECT id, cognate_group, chars, ipa FROM cognates "
+        "WHERE lang = '零陵' AND tone_cat IN (?, ?)",
+        ZERO_LING_UNUSABLE_TONES,
+    ).fetchall()
+    if not doomed:
+        return 0
+    c.executemany("DELETE FROM cognates WHERE id = ?", [(r[0],) for r in doomed])
+    conn.commit()
+    print(f"  [臨時修補] 零陵調 4／5：刪除 {len(doomed)} 條")
+    for r in doomed:
+        print(f"    {r[1]}  {r[2]} {r[3]}  (id={r[0]})")
+    return len(doomed)
+
+
 def rebuild_groups(conn):
     """Rebuild cognate_groups from cognates table."""
     c = conn.cursor()
@@ -514,6 +548,10 @@ def build_cognates_db(db_path, output_path):
     # Step 5: Insert manual entries (delete conflicting auto entries first)
     print("Step 5: Inserting manual entries...")
     insert_manual_entries(conn, manual_entries, db_path)
+
+    # Step 5.5: 臨時修補——零陵聲調編號不可用（見檔內說明，上游修好後連同函式一併刪除）
+    print("Step 5.5: Dropping unusable 零陵 tone 4/5 entries (temporary patch)...")
+    drop_unusable_zero_ling_entries(conn)
 
     # Rebuild cognate_groups from final state
     rebuild_groups(conn)
