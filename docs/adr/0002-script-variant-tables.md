@@ -1,14 +1,14 @@
-# 繁簡異體混搜：字形表隨包分發，不用運行時算法
+# 繁简异体混搜：字形表随包分发，不用运行时算法
 
-搜字音／搜釋義／搜同源都要求「輸入任一種寫法都能命中同一批條目」。App 的展開邏輯（`DictDatabase.expandQueryVariants()`）一直都在，缺的是表：`variants.json` 只由 MCPDict 的 `正字.tsv` 生成，而該表把「湿」只連到「溼」，**沒有標準繁體「濕」**（`著`、`裡`、`裏` 同樣缺失）。結果是搜釋義輸「濕」只得 47 條（實際 231 條），搜同源輸「湿」一組都查不到。
+搜字音／搜释义／搜同源都要求「输入任一种写法都能命中同一批条目」。App 的展开逻辑（`DictDatabase.expandQueryVariants()`）一直都在，缺的是表：`variants.json` 只由 MCPDict 的 `正字.tsv` 生成，而该表把「湿」只连到「溼」，**没有标准繁体「濕」**（`著`、`裡`、`裏` 同样缺失）。结果是搜释义输「濕」只得 47 条（实际 231 条），搜同源输「湿」一组都查不到。
 
-決定：`tools/build_variants.py` 改成多源並查集——`正字.tsv`（異體）＋ OpenCC 的 `STCharacters` / `TSCharacters`（簡↔繁）＋ `HKVariants` / `TWVariants`（港台異體），這些表都在 MCPDict clone 內，不引入新依賴。產物是入庫資源 `app/src/main/assets/variants.json`：13,574 字 / 6,556 組，單組上限 12 字（防「一簡多繁」串成巨團），約 296 KB。
+决定：`tools/build_variants.py` 改成多源并查集——`正字.tsv`（异体）＋ OpenCC 的 `STCharacters` / `TSCharacters`（简↔繁）＋ `HKVariants` / `TWVariants`（港台异体），这些表都在 MCPDict clone 内，不引入新依赖。产物是入库资源 `app/src/main/assets/variants.json`：13,574 字 / 6,556 组，单组上限 12 字（防「一简多繁」串成巨团），约 296 KB。
 
 ## Considered Options
 
-- **運行時用啟發式或引入轉換庫**：App 要離線，多一個依賴換來的只是同一張表。
-- **只修資料、不做表**：治不了根，下一次上游更新或新字照樣漏。
+- **运行时用启发式或引入转换库**：App 要离线，多一个依赖换来的只是同一张表。
+- **只修资料、不做表**：治不了根，下一次上游更新或新字照样漏。
 
 ## Consequences
 
-fork 的 sparse-checkout 必須多拉一塊 `app/src/main/assets/opencc`，否則 `build_variants.py` 直接報錯退出（已寫進 AGENTS.md §4）。一簡多繁（`发`→`發/髮`）會把相關字串成一組，這對檢索是要的；`expandQueryVariants()` 原有的 64 組合上限未動，多字查詢若每字都有多變體仍會退回原查詢。
+fork 的 sparse-checkout 必须多拉一块 `app/src/main/assets/opencc`，否则 `build_variants.py` 直接报错退出（已写进 AGENTS.md §4）。一简多繁（`发`→`發/髮`）会把相关字符串成一组，这对检索是要的；`expandQueryVariants()` 原有的 64 组合上限未动，多字查询若每字都有多变体仍会退回原查询。

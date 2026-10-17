@@ -1,172 +1,173 @@
-# AGENTS.md — 湘典 SiongDict 開發須知
+# AGENTS.md — 湘典 SiongDict 开发须知
 
-> 給在此倉庫工作的 AI／開發者。**2026-10-17 匯總**，程式碼對應 `0.4-rc.9`。
+> 给在此仓库工作的 AI／开发者。**2026-10-17 汇总**，代码对应 `0.4-rc.9`。
 >
-> ⚠️ **本文件在倉庫內、會隨倉庫一起公開** —— 所以這裡只寫可公開的事實：不含建置機絕對路徑（`/Users/<使用者名>/…`）、
-> 不含任何簽章憑證或其口令、不含未公開的個人資料。動程式碼、資料或發版之前先讀一遍。
+> ⚠️ **本文件在仓库内、会随仓库一起公开** —— 所以这里只写可公开的事实：不含建置机绝对路径（`/Users/<使用者名>/…`）、
+> 不含任何签名凭证或其口令、不含未公开的个人资料。动代码、资料或发版之前先读一遍。
 
-## 0. 現狀速覽
+## 0. 现状速览
 
-- 原生 Android App（Kotlin + Jetpack Compose + Material 3），離線 SQLite FTS5 全文檢索，無需聯網。
-- 當前版本 **0.4-rc.9**：`versionCode 43`、`versionName "0.4-rc.9"`，只存在於 `app/build.gradle`。
-- 線上倉庫 `xiang9916/SiongDict`；`master` 是唯一分支，**沒有** `develop`、也**沒有** `.github/workflows`（無 CI）。
-- 資料規模：**480 個方言點**、**596,822 條讀音**、122,853 組同音字；同源詞 **154 組 / 2,222 條**（全數人工標註，無自動條目）。
-- git 倉庫根 = 本文件所在目錄；父目錄不是倉庫，勿在父目錄跑 git 命令。
-- `.git` 約 **9 MB**：2026-10-04 重寫過一次歷史，把非程式碼大檔全部剔除（見 §7.8）。**該日之前的 clone 已與遠端分岔，請重新 clone，勿從舊副本推送。**
-- 全部讀音資料來自 [漢字音典 MCPDict](https://github.com/osfans/MCPDict)。本專案只做三件事：篩選湘語相關方言點、重建檢索索引、人工標註同源詞。
+- 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索，无需联网。
+- 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
+- 当前版本 **0.4-rc.9**：`versionCode 43`、`versionName "0.4-rc.9"`，只存在于 `app/build.gradle`。
+- 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
+- 资料规模：**480 个方言点**、**596,822 条读音**、122,853 组同音字；同源词 **154 组 / 2,222 条**（全数人工标注，无自动条目）。
+- git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
+- `.git` 约 **9 MB**：2026-10-04 重写过一次历史，把非代码大档全部剔除（见 §7.8）。**该日之前的 clone 已与远端分岔，请重新 clone 后再推送。**
+- 全部读音资料来自 [汉字音典 MCPDict](https://github.com/osfans/MCPDict)。本项目只做三件事：筛选湘语相关方言点、重建检索索引、人工标注同源词。
 
-## 1. 🔴 紅線：這些東西不進倉庫
+## 1. 🔴 红线：这些东西不进仓库
 
-| 類別 | 說明 |
+| 类别 | 说明 |
 | --- | --- |
-| 建置機絕對路徑 | `/Users/<使用者名>/…`、`/home/<使用者名>/…` 不得出現在任何被跟蹤檔案中，**日誌與例外堆疊也算**。 |
-| 簽章憑證 | `*.keystore`、`*.jks`、`keystore.properties`、`signingkey.jks` 全在 `.gitignore`。本倉庫**不含任何簽章檔**，也不要 `git add -f` 進去。 |
-| 資料庫二進位 | `*.db` 與 `*.db.bak-*` 在 `.gitignore`（理由見 §3）。V0.4.3 曾誤入 5 個 `cognates.db.bak-*`，還被打進 APK；已於 V0.4-rc.4 清除。 |
-| 大型中間資料 | `tools/tables/`（MCPDict 上游字表，單檔最大 47 MB）、`app/src/main/assets/maps/`、字型 `*.ttf/*.otf`、`*.geojson`、`*.tsv`、`*.apk`、舊 `assets/databases/` 都曾進過歷史，**不要再提交**（否則 `.git` 又會暴漲，得再重寫一次歷史，見 §7.8）。 |
-| Release notes | 它掛在 GitHub 上、不在倉庫裡，但同樣按上表自查。 |
+| 建置机绝对路径 | 被跟踪文件里的路径一律用占位写法（如 `/path/to/android-sdk`），真实建置机路径只出现在本机的未跟踪文件与命令里，**日志与例外堆叠同样按此处理**。 |
+| 签名凭证 | `*.keystore`、`*.jks`、`keystore.properties`、`signingkey.jks` 全在 `.gitignore`。本仓库**不含任何签名档**；签名文件只留在本机，由 `.gitignore` 覆盖。 |
+| 数据库二进制 | `*.db` 与 `*.db.bak-*` 在 `.gitignore`（理由见 §3）。V0.4.3 曾误入 5 个 `cognates.db.bak-*`，还被打进 APK；已于 V0.4-rc.4 清除。 |
+| 大型中间资料 | `tools/tables/`（MCPDict 上游字表，单档最大 47 MB）、`app/src/main/assets/maps/`、字型 `*.ttf/*.otf`、`*.geojson`、`*.tsv`、`*.apk`、旧 `assets/databases/` 都曾进过历史，**保持它们只在本机**（否则 `.git` 又会暴涨，得再重写一次历史，见 §7.8）。 |
+| Release notes | 它挂在 GitHub 上、不在仓库里，但同样按上表自查。 |
 
-發版前自查（除 `.gitignore` 自身列舉關鍵字屬預期命中外，其餘應零命中）：
+发版前自查（除 `.gitignore` 自身列举关键字属预期命中外，其余应零命中）：
 
 ```bash
 cd SiongDict
 git grep -nI -E '/(Users|home)/[A-Za-z0-9_.-]+' -- . ':!.gitignore'
 git grep -nI -E 'password|passwd|secret|api[_-]?key|BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}' -- . ':!.gitignore'
-git ls-files | grep -E '\.(keystore|jks)$|keystore\.properties'   # 應無輸出
+git ls-files | grep -E '\.(keystore|jks)$|keystore\.properties'   # 应无输出
 ```
 
-`.kotlin/errors/*.log` 是 Kotlin daemon 崩潰日誌，會把機器的家目錄路徑寫進去（歷史上的 `errors-*.log` 就是這樣混進倉庫的），
-`.gitignore` 已加 `.kotlin/`；本機重跑建置後若又生成，不要提交。
+`.kotlin/errors/*.log` 是 Kotlin daemon 崩溃日志，会把机器的家目录路径写进去（历史上的 `errors-*.log` 就是这样混进仓库的），
+`.gitignore` 已加 `.kotlin/`；本机重跑建置后若又生成，按 `.gitignore` 忽略即可。
 
-## 2. 目錄結構
+## 2. 目录结构
 
 ```
 app/src/main/java/org/siongdict/app/
   MainActivity.kt            入口
-  data/DictDatabase.kt       assets → 私有目錄複製、FTS5 查詢、變體表載入、版本比對
-  data/Models.kt             資料模型
-  data/ToneFormatter.kt      聲調格式化
-  ui/SearchScreen.kt         全部 UI（搜字音／搜同源／搜釋義；說明頁直接讀 assets 的 README.md、CHANGELOG.md）
-  ui/SearchViewModel.kt      檢索、分組、方言篩選
-  ui/CognateExport.kt        同源詞 CSV 匯出
+  data/DictDatabase.kt       assets → 私有目录复制、FTS5 查询、变体表载入、版本比对
+  data/Models.kt             资料模型
+  data/ToneFormatter.kt      声调格式化
+  ui/SearchScreen.kt         全部 UI（搜字音／搜同源／搜释义；说明页直接读 assets 的 README.md、CHANGELOG.md）
+  ui/SearchViewModel.kt      检索、分组、方言筛选
+  ui/CognateExport.kt        同源词 CSV 导出
 app/src/main/assets/
-  databases/siongdict.db    ★ 不入庫，必須自行重建（§3、§4）
-  databases/cognates.db     ★ 不入庫，必須自行重建；缺失時 App 不會崩，「搜同源」自動停用
-  variants.json             異體字對映，**已入庫**（由 tools/build_variants.py 產生；繁體、簡體、異體三種寫法互查）
-  t2s.json                  繁→簡對映，**已入庫**（由 tools/build_simplifier.py 產生；含本地「著」保護詞表，見該腳本與 docs/adr/0003）
-  README.md / CHANGELOG.md  **已入庫**；App 內「說明」頁讀的就是這兩份，必須與倉庫根目錄的同名檔案逐字節一致
-tools/                       資料管線（純 Python 3 標準庫，無第三方依賴、無 requirements.txt）
+  databases/siongdict.db    ★ 不入库，必须自行重建（§3、§4）
+  databases/cognates.db     ★ 不入库，必须自行重建；缺失时 App 不会崩，「搜同源」自动停用
+  variants.json             异体字对映，**已入库**（由 tools/build_variants.py 产生；繁体、简体、异体三种写法互查）
+  t2s.json                  繁→简对映，**已入库**（由 tools/build_simplifier.py 产生；含本地「着」保护词表，见该脚本与 docs/adr/0003）
+  README.md / CHANGELOG.md  **已入库**；App 内「说明」页读的就是这两份，必须与仓库根目录的同名文件逐字节一致
+tools/                       资料管线（纯 Python 3 标准库，无第三方依赖、无 requirements.txt）
   build_db.py                MCPDict 字表 → siongdict.db
-  build_variants.py          正字.tsv + OpenCC 字表 → variants.json（繁簡異體混搜）
-  build_simplifier.py        OpenCC TSPhrases/TSCharacters → t2s.json（簡體渲染）
-  cognate_pipeline.py        橋字驗證 → cognates.db
-  ipa_parser.py              IPA 聲母／韻母／聲調切分，被 cognate_pipeline.py 匯入
-publish/                     本機出包暫存，已 gitignore
+  build_variants.py          正字.tsv + OpenCC 字表 → variants.json（繁简异体混搜）
+  build_simplifier.py        OpenCC TSPhrases/TSCharacters → t2s.json（简体渲染）
+  cognate_pipeline.py        桥字验证 → cognates.db
+  ipa_parser.py              IPA 声母／韵母／声调切分，被 cognate_pipeline.py 导入
+publish/                     本机出包暂存，已 gitignore
 ```
 
-## 3. 資料庫不入庫 —— fork 之後必須自己重建
+## 3. 数据库不入库 —— fork 之后必须自己重建
 
-這是本專案最容易踩的坑：**clone 下來直接 `./gradlew assembleDebug` 會 BUILD SUCCESSFUL，但裝上去一開就崩。**
+这是本项目最容易踩的坑：**clone 下来直接 `./gradlew assembleDebug` 会 BUILD SUCCESSFUL，但装上去一开就崩。**
 
-原因有兩層：
+原因有两层：
 
-1. `app/src/main/assets/databases/` 整個目錄不在倉庫裡 —— `.gitignore:10` 的 `*.db` 把兩個資料庫擋掉了；
-2. 建置期不校驗 assets 是否存在。崩潰發生在執行期：`DictDatabase.copyAssetDatabase()` 找不到 `databases/siongdict.db` 會直接拋例外（`DictDatabase.kt:52-60`）。
+1. `app/src/main/assets/databases/` 整个目录不在仓库里 —— `.gitignore:10` 的 `*.db` 把两个数据库挡掉了；
+2. 建置期不校验 assets 是否存在。崩溃发生在执行期：`DictDatabase.copyAssetDatabase()` 找不到 `databases/siongdict.db` 会直接抛例外（`DictDatabase.kt:52-60`）。
 
-兩個檔案的性質不同：
+两个文件的性质不同：
 
-| 檔案 | 大小 | 缺失後果 |
+| 文件 | 大小 | 缺失后果 |
 | --- | --- | --- |
-| `siongdict.db` | 約 54 MB | **必需**。App 啟動即崩。含 `langs`（讀音，FTS5）與 `info`（方言點後設資料）兩張虛擬表。 |
-| `cognates.db` | 約 252 KB | **可選**。只記一條 warn，App 正常跑，「搜同源」停用（`DictDatabase.kt:67-74`）。含 `cognates` 與 `cognate_groups`。 |
+| `siongdict.db` | 约 54 MB | **必需**。App 启动即崩。含 `langs`（读音，FTS5）与 `info`（方言点元数据）两张虚拟表。数据库字段名沿用繁体写法（`字組`、`語言`、`讀音`、`註釋`、`排序`），写 SQL 时照抄。 |
+| `cognates.db` | 约 252 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DictDatabase.kt:67-74`）。含 `cognates` 与 `cognate_groups`。 |
 
-不把 `.db` 納入版本控制是刻意的：`siongdict.db` 每次音典更新都會整體變動，一旦入庫，**每次資料更新都會在 git 歷史裡永久留下一個 54 MB 的 blob**，倉庫很快就會被撐爆。請走 §4 的重建路線，或直接取用 GitHub Release 的 APK。
+不把 `.db` 纳入版本控制是刻意的：`siongdict.db` 每次音典更新都会整体变动，一旦入库，**每次资料更新都会在 git 历史里永久留下一个 54 MB 的 blob**，仓库很快就会被撑爆。请走 §4 的重建路线，或直接取用 GitHub Release 的 APK。
 
-## 4. 從 fork 到能跑：最短路徑
+## 4. 从 fork 到能跑：最短路径
 
 ### 前置
 
 - **JDK 17**（`app/build.gradle` 的 `sourceCompatibility` / `targetCompatibility` / `jvmTarget` 都是 17）
 - **Android SDK**：`platforms/android-35` + `build-tools/35.0.0`（`compileSdk 35` / `targetSdk 35` / `minSdk 24`）
-- **Python 3**（管線只用標準庫）
-- Gradle 由 wrapper 自動下載（8.11.1），不必預裝
+- **Python 3**（管线只用标准库）
+- Gradle 由 wrapper 自动下载（8.11.1），不必预装
 
-### 步驟
+### 步骤
 
 ```bash
-# 1) 指定 SDK 路徑（local.properties 已 gitignore，必須自建）
+# 1) 指定 SDK 路径（local.properties 已 gitignore，必须自建）
 cd SiongDict
 echo "sdk.dir=/path/to/android-sdk" > local.properties
 
-# 2) 取得 MCPDict 上游字表。只 sparse 出需要的三塊——完整 clone 是 GB 級
+# 2) 取得 MCPDict 上游字表。只 sparse 出需要的三块——完整 clone 是 GB 级
 cd ..
 git clone --filter=blob:none --sparse https://github.com/osfans/MCPDict.git MCPDict-master
 cd MCPDict-master
 git sparse-checkout set tools/tables/output tools/tables/data/正字.tsv app/src/main/assets/opencc
 cd ../SiongDict
-# ⚠️ MCPDict-master 必須與 SiongDict 平級：tools/*.py 的預設路徑是 ../../MCPDict-master/...
+# ⚠️ MCPDict-master 必须与 SiongDict 平级：tools/*.py 的默认路径是 ../../MCPDict-master/...
 
-# 3) 重建資料（腳本的預設輸出路徑就是 assets 下的正確位置）
-python3 tools/build_db.py          # 讀 ../MCPDict-master/tools/tables/output/_詳情.json 與 <簡稱>.tsv
-python3 tools/build_variants.py    # 讀 正字.tsv + opencc/{ST,TS}Characters、{HK,TW}Variants
-python3 tools/build_simplifier.py  # 讀 opencc/TSPhrases.txt 與 opencc/TSCharacters.txt
-python3 tools/cognate_pipeline.py  # 讀 siongdict.db，輸出 cognates.db
+# 3) 重建资料（脚本的默认输出路径就是 assets 下的正确位置）
+python3 tools/build_db.py          # 读 ../MCPDict-master/tools/tables/output/_詳情.json 与 <简称>.tsv
+python3 tools/build_variants.py    # 读 正字.tsv + opencc/{ST,TS}Characters、{HK,TW}Variants
+python3 tools/build_simplifier.py  # 读 opencc/TSPhrases.txt 与 opencc/TSCharacters.txt
+python3 tools/cognate_pipeline.py  # 读 siongdict.db，输出 cognates.db
 
 # 4) 出包
 ./gradlew assembleDebug
-# 產物：app/build/outputs/apk/debug/app-debug.apk
+# 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### 幾個必須知道的限制
+### 几个必须知道的限制
 
-- **只有 `build_db.py` 支援 `--mcpdict-dir`**。`build_variants.py` 的上游路徑**寫死在原始碼常數裡**，MCPDict 放在別處時要嘛改常數，要嘛做個同名軟連結：`ln -s /path/to/MCPDict-master ../MCPDict-master`。
-- `build_db.py` 依賴 `output/_詳情.json`；只 sparse 出各方言點 TSV 是跑不起來的。
-- 資料庫都是 SQLite FTS5，App 以**唯讀**開啟，不寫入使用者裝置上的資料。
+- **只有 `build_db.py` 支持 `--mcpdict-dir`**。`build_variants.py` 的上游路径**写死在原始码常数里**，MCPDict 放在别处时要嘛改常数，要嘛做个同名软链接：`ln -s /path/to/MCPDict-master ../MCPDict-master`。
+- `build_db.py` 依赖 `output/_詳情.json`；只 sparse 出各方言点 TSV 是跑不起来的。
+- 数据库都是 SQLite FTS5，App 以**只读**开启，不写入使用者装置上的资料。
 
-## 5. 資料更新流程（上游 → 本專案）
+## 5. 资料更新流程（上游 → 本项目）
 
 ```bash
-# 1) 更新 MCPDict（sparse clone 體積小，直接 fetch 即可）
+# 1) 更新 MCPDict（sparse clone 体积小，直接 fetch 即可）
 cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDict
 
-# 2) 重跑 §4 的四支腳本
+# 2) 重跑 §4 的四支脚本
 
-# 3) 同步文件數字
-#    README.md 的「480 個方言點、122,853 組同音字、596,822 條讀音」
-#    CHANGELOG.md 新增頂部條目
-#    然後把這兩份複製到 app/src/main/assets/（見 §7.2）
+# 3) 同步文件数字
+#    README.md 的「480 个方言点、122,853 组同音字、596,822 条读音」
+#    CHANGELOG.md 新增顶部条目
+#    然后把这两份复制到 app/src/main/assets/（见 §7.2）
 
-# 4) bump versionName / versionCode（見 §6），出包，發 Release
+# 4) bump versionName / versionCode（见 §6），出包，发 Release
 ```
 
-**人工同源詞不會被重建吃掉。** `cognate_pipeline.py` 的 Step 0 先把 `cognates` 表裡 `source='manual'` 的記錄整批備份出來，Step 5 再插回並刪掉同 `lang+ipa` 的自動條目（`load_manual_entries` / `insert_manual_entries`）。
-但**上游方言點改名／消失時要人工檢查引用**：條目按「字組＋讀音＋方言點」唯一匹配，方言點一改名就會對不上而失效。
+**人工同源词不会被重建吃掉。** `cognate_pipeline.py` 的 Step 0 先把 `cognates` 表里 `source='manual'` 的记录整批备份出来，Step 5 再插回并删掉同 `lang+ipa` 的自动条目（`load_manual_entries` / `insert_manual_entries`）。
+但**上游方言点改名／消失时要人工检查引用**：条目按「字组＋读音＋方言点」唯一匹配，方言点一改名就会对不上而失效。
 
-`cognate_pipeline.py` 頂部的 `LABEL_MAP` 是自動義類的中文標籤表（tag → 標籤），新增自動義類時要補一條。
+`cognate_pipeline.py` 顶部的 `LABEL_MAP` 是自动义类的中文标签表（tag → 标签），新增自动义类时要补一条。
 
-旁邊的 `SUPPRESSED_SEMANTIC_TAGS` 是**停用清單**：清單裡的 tag 不再自動生成義類組，目前只含 `HIDE`。2026-10-05 撤下了 23 個 `Hide_*` 自動組（當時寫作 `HIDE_*`，標籤同為「躲藏/捉迷藏」，62 條），但 pipeline 每次重建都會把它們重新算出來——**只刪資料庫裡的行是刪不掉的，必須在這裡擋**。反過來，要恢復某個自動義類，把它從這個集合裡拿掉即可。這裡的鍵是 `SEMANTIC_RULES` 吐出的 tag（全大寫），不是組名。
+旁边的 `SUPPRESSED_SEMANTIC_TAGS` 是**停用清单**：清单里的 tag 不再自动生成义类组，目前只含 `HIDE`。2026-10-05 撤下了 23 个 `Hide_*` 自动组（当时写作 `HIDE_*`，标签同为「躲藏/捉迷藏」，62 条），但 pipeline 每次重建都会把它们重新算出来——**只删数据库里的行是删不掉的，必须在这里挡**。反过来，要恢复某个自动义类，把它从这个集合里拿掉即可。这里的键是 `SEMANTIC_RULES` 吐出的 tag（全大写），不是组名。
 
-**組名與義項的寫法（2026-10-08 統一，英文一律大駝峰）：**
+**组名与义项的写法（2026-10-08 统一，英文一律大驼峰）：**
 
-- `cognate_group` = `<義項>_<音類>`：`Press_gin6`、`Hide_dzɔŋ2`、`Segment_CutOpen_ʂak7`；
-- `semantic_tag` = **義項**，即組名去掉末尾那段音類：`Press`、`Hide`、`Segment_CutOpen`。**一個義項下掛多個音類組是正確結構**——`Hide` 掛 8 組、`Press` 4 組、`Attach`/`Curse`/`Fuck` 各 4 組；
-- 駝峰只作用於**純 A–Z 字母**段；含音標或數字的段原樣保留（`DJNbo2_bo2` 這類音類組不動），多詞複合義項按語義切詞（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）；
-- 組名後綴是**音類標籤**，**不保證等於組內某個成員的今讀**：`Press_gin6`/`gin6`/`ɣan6`/`dzen6` 用的是中古音類名，`Curse_tʂʰak8`（成員今讀是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成員是 sa1/sa5/sa7…）、`SetUp_tun5`（成員是 tən5/ten5/tuen5/tin5…）用的是該音類的代表讀音。2026-10-08 審計時 141 組裡有 100 組如此，是正常結構，不要當成錯名去改；
-- `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是這條規則的實作，自動分組與人工條目都走它。
+- `cognate_group` = `<义项>_<音类>`：`Press_gin6`、`Hide_dzɔŋ2`、`Segment_CutOpen_ʂak7`；
+- `semantic_label` = **繁体中文**标签（前端显示用，如 `鋸`、`彎腰`）；`semantic_tag` = **义项**，即组名去掉末尾那段音类：`Press`、`Hide`、`Segment_CutOpen`。**一个义项下挂多个音类组是正确结构**——`Hide` 挂 8 组、`Press` 4 组、`Attach`/`Curse`/`Fuck` 各 4 组；
+- 驼峰只作用于**纯 A–Z 字母**段；含音标或数字的段原样保留（`DJNbo2_bo2` 这类音类组不动），多词复合义项按语义切词（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）；
+- 组名后缀是**音类标签**，**不保证等于组内某个成员的今读**：`Press_gin6`/`gin6`/`ɣan6`/`dzen6` 用的是中古音类名，`Curse_tʂʰak8`（成员今读是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成员是 sa1/sa5/sa7…）、`SetUp_tun5`（成员是 tən5/ten5/tuen5/tin5…）用的是该音类的代表读音。2026-10-08 审计时 141 组里有 100 组如此，是正常结构，按既有组名使用即可；
+- `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是这条规则的实现，自动分组与人工条目都走它。
 
-**「搜同源」結果的排序（2026-10-08 定案）：** 一律按 `cognate_group`（卡片副標那行英文，`<義項>_<音類>`）**不分大小寫的字母序**，與命中相關度、方言點數多寡都無關。實作在 `DictDatabase.searchCognates()` 尾端的 `COGNATE_DISPLAY_ORDER`，改那個比較器就等於改全 App 的顯示順序；組**內**成員仍按 `sort_key`（音典排序），不要一起改。
+**「搜同源」结果的排序（2026-10-08 定案）：** 一律按 `cognate_group`（卡片副标那行英文，`<义项>_<音类>`）**不分大小写的字母序**，与命中相关度、方言点数多寡都无关。实现在 `DictDatabase.searchCognates()` 尾端的 `COGNATE_DISPLAY_ORDER`，改那个比较器就等于改全 App 的显示顺序；组**内**成员仍按 `sort_key`（音典排序）排列，两套顺序各自独立。
 
-**入組硬規則（2026-10-08 定案，見 `docs/adr/0005-entries-must-have-gloss.md`）：** 新增同源詞條必須**同時**滿足 ——
-① 該讀音在字音庫裡 `註釋` 非空（**全庫 67% 的行沒有註釋**，這些行一律不得入組）；
-② 註釋的語義與該組**義項**相符，且經人工確認。
-**「音類對得上」只是必要條件，不能當入組理由**：同點同韻母裡擠著幾百個字，`SetUp_tun5` 就出現過
-同點同韻母的 `敦 ten1` 註釋是「敦促」、與該組的「敦／豎起」不是一個詞。本規則**不追溯存量**
-（現有 2,222 條成員中 521 條無註釋，是當年按文獻核定的；2026-10-13 另有一次經維護者逐條核可的例外，見 ADR-0005 附錄），只約束新增。
+**入组硬规则（2026-10-08 定案，见 `docs/adr/0005-entries-must-have-gloss.md`）：** 新增同源词条必须**同时**满足 ——
+① 该读音在字音库里 `註釋` 非空（**全库 67% 的行没有注释**，入组候选一律取自注释非空的行）；
+② 注释的语义与该组**义项**相符，且经人工确认。
+**「音类对得上」只是必要条件，入组理由须是注释语义相符**：同点同韵母里挤着几百个字，`SetUp_tun5` 就出现过
+同点同韵母的 `敦 ten1` 注释是「敦促」、与该组的「敦／竖起」不是一个词。本规则**不追溯存量**
+（现有 2,222 条成员中 521 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
 
-維護者另有一套本機技能（同韻母比較判歸音類、橋字驗證、人工編輯同源詞、CSV 匯出）——**不隨倉庫分發**，倉庫內的 `tools/*.py` 才是唯一事實來源。
+维护者另有一套本机技能（同韵母比较判归音类、桥字验证、人工编辑同源词、CSV 导出）——**不随仓库分发**，仓库内的 `tools/*.py` 才是唯一事实来源。
 
-## 6. 版本號與發版
+## 6. 版本号与发版
 
-**`versionCode` 每個對外 tag 嚴格 +1**，不要跳號：
+**`versionCode` 每个对外 tag 严格 +1**，按顺序递增：
 
 | versionName | versionCode |
 | --- | --- |
@@ -182,9 +183,9 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4-rc.8 | 42 |
 | 0.4-rc.9 | 43 |
 
-`versionName` 自 0.4-rc.4 起採 `0.4-rc.N` 形式（取代原先的 `0.4.N` 遞增）；0.4.4 從未出包，所以接在 0.4.3 後面的是 `0.4-rc.4` / code 38，而不是 39。
+`versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。
 
-**版本號是唯一把新資料推給既有使用者的機制。** `isDatabaseOutdated()` 拿 `versionName` 字串與 SharedPreferences 裡記下的值做**不等比較**（`DictDatabase.kt:115-118`，不解析語意化版本），不相等就重拷 assets 裡的資料庫。所以**只要動了資料，就一定要 bump `versionName`**，否則老使用者永遠留在舊資料上。
+**版本号是唯一把新资料推给既有使用者的机制。** `isDatabaseOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DictDatabase.kt:115-118`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
 
 ### 出包
 
@@ -194,20 +195,20 @@ export JAVA_HOME=/path/to/jdk-17
 cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 ```
 
-**暫存一律放 `publish/`，不要放 `/tmp`** —— macOS 開機時會清空 `/tmp`，放那裡的 APK 與資料庫備份重開機就沒了（`publish/` 已 gitignore，不會進倉庫）。
+**暂存一律放 `publish/`** —— macOS 开机时会清空 `/tmp`，放在 `publish/` 的 APK 与数据库备份才能留到下一次发版（`publish/` 已 gitignore，不进仓库）。
 
-**上傳用的檔名必須是純 ASCII。** `gh release` 不會報錯，但會把非 ASCII 檔名吃掉一大截：2026-10-05 用 `publish/湘典-debug-0.4-rc.5.apk` 上傳，asset 名稱變成 `-debug-0.4-rc.5.apk`，得刪掉重傳。一律先複製成 `publish/<version>.apk` 再上傳。
+**上传用的档名必须是纯 ASCII。** `gh release` 不会报错，但会把非 ASCII 档名吃掉一大截：2026-10-05 用 `publish/湘典-debug-0.4-rc.5.apk` 上传，asset 名称变成 `-debug-0.4-rc.5.apk`，得删掉重传。一律先复制成 `publish/<version>.apk` 再上传。
 
-**對外一律發 debug 簽章的 APK。** `app/build.gradle` 的 `release` buildType 沒有 `signingConfig`，`assembleRelease` 產出的是**未簽章** APK，裝不上。
+**对外一律发 debug 签名的 APK。** `app/build.gradle` 的 `release` buildType 没有 `signingConfig`，`assembleRelease` 产出的是**未签名** APK，装不上。
 
-### 發 Release
+### 发 Release
 
 ```bash
-# 0) 清掉上一版留下的資料庫備份（回滾點用到下一次發版為止）
-ls -la publish/*.db.bak-*   # 先看一眼再刪
+# 0) 清掉上一版留下的数据库备份（回滚点用到下一次发版为止）
+ls -la publish/*.db.bak-*   # 先看一眼再删
 rm -f publish/*.db.bak-*
 
-git tag <version>                    # lightweight tag，不要 annotated
+git tag <version>                    # lightweight tag（非 annotated）
 git push origin master <version>
 gh release create <version> "publish/<version>.apk" \
   --repo xiang9916/SiongDict \
@@ -216,34 +217,34 @@ gh release create <version> "publish/<version>.apk" \
   --target master --verify-tag
 ```
 
-- Release `name` 與 tag 同名；asset 名為 `<version>.apk`（不帶 `湘典-debug-` 前綴）；`prerelease=false`。
-- notes 取 CHANGELOG 頂部那一條，去掉 Markdown 粗體等標記，改寫成純文本逐條列出。
-- release 列表按時間排序，最新的一條自動成為 **Latest**。
+- Release `name` 与 tag 同名；asset 名为 `<version>.apk`（不带 `湘典-debug-` 前缀）；`prerelease=false`。
+- notes 取 CHANGELOG 顶部那一条，去掉 Markdown 粗体等标记，改写成纯文本逐条列出。
+- release 列表按时间排序，最新的一条自动成为 **Latest**。
 
-### 簽章陷阱
+### 签名陷阱
 
-debug keystore 是**每台機器各自生成**的（`~/.android/debug.keystore`）。換一台機器出包，簽章指紋就變了，已安裝舊版的裝置升級時會 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，**必須先卸載**。跨機器發版時，release notes 裡要明寫這條提醒。
+debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`）。换一台机器出包，签名指纹就变了，已安装旧版的装置升级时会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，升级前先卸载旧版。跨机器发版时，release notes 里要明写这条提醒。
 
 ## 7. 已知陷阱
 
-1. **`.gitignore` 的 `*.db` 會讓 `git add app/src/main/assets/databases/` 靜默跳過資料庫**，不報錯也不提示。真要加得 `git add -f`（本專案政策是不要加，見 §1、§3）。
-2. **`README.md` / `CHANGELOG.md` 各有兩份，必須逐字節一致。** App 的「說明」頁讀的是 `app/src/main/assets/` 裡那一份（`SearchScreen.kt:320,326`），只改倉庫根目錄那份，會出現「倉庫寫的」和「App 顯示的」不一致。改完自查：
+1. **`.gitignore` 的 `*.db` 会让 `git add app/src/main/assets/databases/` 静默跳过数据库**，不报错也不提示。真要加得 `git add -f`（本项目政策是只留在本机，见 §1、§3）。
+2. **`README.md` / `CHANGELOG.md` 各有两份，必须逐字节一致。** App 的「说明」页读的是 `app/src/main/assets/` 里那一份（`SearchScreen.kt:320,326`），只改仓库根目录那份，会出现「仓库写的」和「App 显示的」不一致。改完自查：
    ```bash
    md5 README.md app/src/main/assets/README.md
    md5 CHANGELOG.md app/src/main/assets/CHANGELOG.md
    ```
-3. 資料更新後別忘了 `README.md` 裡的三個數字（方言點數、同音字組數、讀音條數）。
-4. `tools/tables/` 不存在於倉庫中，任何指向 `tools/tables/...` 的文檔路徑都只是**上游 MCPDict 的相對位置**，不是本倉庫的檔案。
-5. 方言島（如分區歸「閩」的點）預設不顯示，要在 App 裡勾選對應篩選才會出現——`SearchViewModel.isDialectVisible()` 按「音典分區」前綴分派，`閩`／`嶺東`／`嶺南` 歸在「湘南土話」那一組開關下。
-6. Gradle 開了 `org.gradle.configuration-cache=true`；AGP 8.7.3 與 Kotlin 2.0.21 是硬綁定，`org.jetbrains.kotlin.android` 與 `org.jetbrains.kotlin.plugin.compose` 兩個 plugin 版本必須保持一致。
-7. 資料庫備份檔 `*.db.bak-YYYYMMDD-HHMMSS` 由管線自動產生，留在 `app/src/main/assets/databases/` 會被一起打進 APK——App 根本不讀它們。已在 `.gitignore` 加 `*.db.bak-*`，仍請在出包前確認該目錄只剩兩個 `.db`。
-8. **2026-10-04 重寫過一次 git 歷史**（`git-filter-repo`），剔除非程式碼 blob：`--strip-blobs-bigger-than 1M`，加 `*.tsv`／`*.geojson`／`*.ttf`／`*.otf`／`*.apk`／`*.db`／`*.csv`／`*.xlsx`／`*.zip`／`*.DS_Store` 等 glob，加歷史遺留目錄 `tools/tables`、`方言.geojson`、`bin`、`font`、`cgi`、`libs`、`gen`、`.settings`、`.kotlin`、`assets/databases`、`app/src/main/assets/maps`、`app/src/main/res/font`。結果：`.git` 由 **882 MB 降至 9 MB**，提交數 1672 → 740（被剪掉的是只動數據、重寫後變空的提交，程式碼提交全在），19 個 tag 全部重寫並強推。**重寫後 `HEAD^{tree}` 與重寫前逐位元組相同**（`4b7b0c941040efab83d031611b88a890720222f5`），程式碼內容零改動；全新 clone 可以正常 `assembleDebug` 並打出帶資料庫的 APK。三條後果要記住：
-   - 舊 clone 的歷史已與遠端分岔，**不要再從舊副本 push**，重新 clone；
-   - 別再往倉庫提交大檔，否則又要重寫一次歷史（`git-filter-repo` 需另裝，`pip3 install git-filter-repo`）；
-   - GitHub Release 掛在 tag 名稱上，重寫 tag 不影響 Release 本體（0.4-rc.4 的 APK 仍在，未受影響）。
+3. 资料更新后别忘了 `README.md` 里的三个数字（方言点数、同音字组数、读音条数）。
+4. `tools/tables/` 不存在于仓库中，任何指向 `tools/tables/...` 的文档路径都只是**上游 MCPDict 的相对位置**，不是本仓库的文件。
+5. 方言岛（如分区归「闽」的点）默认不显示，要在 App 里勾选对应筛选才会出现——`SearchViewModel.isDialectVisible()` 按「音典分区」前缀分派，`闽`／`岭东`／`岭南` 归在「湘南土话」那一组开关下。
+6. Gradle 开了 `org.gradle.configuration-cache=true`；AGP 8.7.3 与 Kotlin 2.0.21 是硬绑定，`org.jetbrains.kotlin.android` 与 `org.jetbrains.kotlin.plugin.compose` 两个 plugin 版本必须保持一致。
+7. 数据库备份档 `*.db.bak-YYYYMMDD-HHMMSS` 由管线自动产生，留在 `app/src/main/assets/databases/` 会被一起打进 APK——App 根本不读它们。已在 `.gitignore` 加 `*.db.bak-*`，仍请在出包前确认该目录只剩两个 `.db`。
+8. **2026-10-04 重写过一次 git 历史**（`git-filter-repo`），剔除非代码 blob：`--strip-blobs-bigger-than 1M`，加 `*.tsv`／`*.geojson`／`*.ttf`／`*.otf`／`*.apk`／`*.db`／`*.csv`／`*.xlsx`／`*.zip`／`*.DS_Store` 等 glob，加历史遗留目录 `tools/tables`、`方言.geojson`、`bin`、`font`、`cgi`、`libs`、`gen`、`.settings`、`.kotlin`、`assets/databases`、`app/src/main/assets/maps`、`app/src/main/res/font`。结果：`.git` 由 **882 MB 降至 9 MB**，提交数 1672 → 740（被剪掉的是只动数据、重写后变空的提交，代码提交全在），19 个 tag 全部重写并强推。**重写后 `HEAD^{tree}` 与重写前逐位元组相同**（`4b7b0c941040efab83d031611b88a890720222f5`），代码内容零改动；全新 clone 可以正常 `assembleDebug` 并打出带数据库的 APK。三条后果要记住：
+   - 旧 clone 的历史已与远端分岔，**从新 clone 推送**；
+   - 别再往仓库提交大档，否则又要重写一次历史（`git-filter-repo` 需另装，`pip3 install git-filter-repo`）；
+   - GitHub Release 挂在 tag 名称上，重写 tag 不影响 Release 本体（0.4-rc.4 的 APK 仍在，未受影响）。
 
-   順帶：這次重寫也把歷史上的 `.kotlin/errors/errors-*.log`（含建置機家目錄路徑）一併抹掉了。
+   顺带：这次重写也把历史上的 `.kotlin/errors/errors-*.log`（含建置机家目录路径）一并抹掉了。
 
 ---
 
-*本文件由維護者與 AI 協作維護。改動專案結構、管線或發版流程時，請一併更新這裡。*
+*本文件由维护者与 AI 协作维护。改动项目结构、管线或发版流程时，请一并更新这里。*
