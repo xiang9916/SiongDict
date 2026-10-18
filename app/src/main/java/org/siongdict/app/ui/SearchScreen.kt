@@ -1,113 +1,106 @@
 package org.siongdict.app.ui
 
-import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.DisableSelection
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import org.siongdict.app.data.SearchMode
-import org.siongdict.app.data.CharGroup
-import org.siongdict.app.data.Simplifier
-import org.siongdict.app.data.DialectEntry
-import org.siongdict.app.data.CognateGroup
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
+import org.siongdict.app.data.CharGroup
+import org.siongdict.app.data.SearchMode
+import org.siongdict.app.ui.icons.SiongIcons
+import org.siongdict.app.ui.theme.SiongDarkRed
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-   val scope = rememberCoroutineScope()
-   var showInfoDialog by remember { mutableStateOf(false) }
-   var showFilterMenu by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var showInfoDialog by remember { mutableStateOf(false) }
+    var showFilterMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            Column {
-               TopAppBar(
-                    title = {
-                        val suffix = if (uiState.dbOutdated) " - 有更新" else ""
-                        Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
-                    },
-                   actions = {
-                        IconButton(onClick = { showFilterMenu = true }) {
-                            Icon(
-                                Icons.Default.Visibility,
-                                contentDescription = "方言篩選",
-                                tint = Color.White
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showFilterMenu,
-                            onDismissRequest = { showFilterMenu = false }
-                        ) {
-                            FilterCheckboxItem("湘贛", uiState.filterXiangGan) { checked ->
-                                viewModel.updateFilters(
-                                    checked, uiState.filterZhongShangJiang, uiState.filterXiangHuaTuHua
-                                )
-                            }
-                            FilterCheckboxItem("中上江和藍青", uiState.filterZhongShangJiang) { checked ->
-                                viewModel.updateFilters(
-                                    uiState.filterXiangGan, checked, uiState.filterXiangHuaTuHua
-                                )
-                            }
-                            FilterCheckboxItem("鄉話和土話", uiState.filterXiangHuaTuHua) { checked ->
-                                viewModel.updateFilters(
-                                    uiState.filterXiangGan, uiState.filterZhongShangJiang, checked
-                                )
-                            }
-                        }
-                        IconButton(onClick = { showInfoDialog = true }) {
-                           Icon(
-                                Icons.Default.Info,
-                                contentDescription = "關於",
-                               tint = Color.White
-                           )
-                       }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color(0xFF8B0000),
-                        titleContentColor = Color.White
+            TopAppBar(
+                title = {
+                    val suffix = if (uiState.dbOutdated) " - 有更新" else ""
+                    Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
+                },
+                actions = {
+                    IconButton(onClick = { showFilterMenu = true }) {
+                        Icon(
+                            SiongIcons.Visibility,
+                            contentDescription = "方言篩選",
+                            tint = Color.White
+                        )
+                    }
+                    DialectFilterMenu(
+                        expanded = showFilterMenu,
+                        filters = uiState.filters,
+                        onDismiss = { showFilterMenu = false },
+                        onFiltersChange = viewModel::updateFilters
                     )
+                    IconButton(onClick = { showInfoDialog = true }) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "關於",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = SiongDarkRed,
+                    titleContentColor = Color.White
                 )
-            }
+            )
         }
     ) { padding ->
         Column(
@@ -115,136 +108,20 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Search bar
-            OutlinedTextField(
-                value = uiState.query,
-                onValueChange = viewModel::updateQuery,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-               placeholder = {
-                   Text(disp(when (uiState.mode) {
-                       SearchMode.CHAR -> "輸入漢字檢索"
-                       SearchMode.COGNATE -> "輸入中英義項或構擬祖型檢索"
-                       SearchMode.MEANING -> "輸入注釋內容匹配檢索"
-                   }))
-               },
-                trailingIcon = {
-                    if (uiState.query.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.updateQuery("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "清除")
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+            SearchBar(
+                query = uiState.query,
+                mode = uiState.mode,
+                onQueryChange = viewModel::updateQuery,
+                onSearch = viewModel::search
             )
-
-            // Mode selector
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SearchMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = uiState.mode == mode,
-                        onClick = { viewModel.updateMode(mode) },
-                        label = { Text(disp(mode.label)) }
-                    )
-                }
-            }
-
+            ModeSelector(selected = uiState.mode, onSelect = viewModel::updateMode)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Results
-            if (uiState.loading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else if (uiState.searched && uiState.results.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (uiState.error != null) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = disp("查詢出錯"),
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = disp(uiState.error!!),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp
-                            )
-                        }
-                    } else {
-                        Text(disp("無結果"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            } else {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        itemsIndexed(
-                            uiState.results,
-                            key = { _, group -> groupKey(group) }
-                        ) { _, group ->
-                            ResultCard(group)
-                        }
-                    }
-                    if (uiState.results.size > 1) {
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .fillMaxHeight()
-                                .background(MaterialTheme.colorScheme.outlineVariant)
-                        )
-                        LazyColumn(
-                            modifier = Modifier
-                                .width(36.dp)
-                                .fillMaxHeight(),
-                            contentPadding = PaddingValues(vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            itemsIndexed(
-                                uiState.results,
-                                key = { _, group -> groupKey(group) }
-                            ) { index, group ->
-                                val navText = displayTitle(group.chars).take(2)
-                                Text(
-                                    text = navText,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .padding(vertical = 2.dp)
-                                        .clickable {
-                                            scope.launch { listState.animateScrollToItem(index) }
-                                        }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-       }
+            ResultsPane(
+                uiState = uiState,
+                listState = listState,
+                onJumpTo = { index -> scope.launch { listState.animateScrollToItem(index) } }
+            )
+        }
     }
 
     if (showInfoDialog) {
@@ -252,23 +129,190 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
     }
 }
 
-/** Stable LazyColumn key for a result card. */
-private fun groupKey(group: CharGroup) = "${group.chars}_${group.subtitle}"
+@Composable
+private fun SearchBar(
+    query: String,
+    mode: SearchMode,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        placeholder = {
+            Text(
+                disp(
+                    when (mode) {
+                        SearchMode.CHAR -> "輸入漢字檢索"
+                        SearchMode.COGNATE -> "輸入中英義項或構擬祖型檢索"
+                        SearchMode.MEANING -> "輸入注釋內容匹配檢索"
+                    }
+                )
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Clear, contentDescription = "清除")
+                }
+            }
+        },
+        singleLine = true,
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+    )
+}
 
-/** Card title with the inter-character spaces of 字組 removed. */
-private fun displayTitle(chars: String) = chars.replace(" ", "")
+@Composable
+private fun ModeSelector(selected: SearchMode, onSelect: (SearchMode) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SearchMode.entries.forEach { mode ->
+            FilterChip(
+                selected = selected == mode,
+                onClick = { onSelect(mode) },
+                label = { Text(disp(mode.label)) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResultsPane(
+    uiState: SearchUiState,
+    listState: LazyListState,
+    onJumpTo: (Int) -> Unit
+) {
+    when {
+        uiState.loading -> CenteredBox { CircularProgressIndicator() }
+        uiState.searched && uiState.results.isEmpty() -> CenteredBox {
+            val error = uiState.error
+            if (error != null) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = disp("查詢出錯"),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = disp(error),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
+                    )
+                }
+            } else {
+                Text(disp("無結果"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        else -> Row(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(
+                    uiState.results,
+                    key = { index, group -> resultKey(index, group) }
+                ) { _, group ->
+                    ResultCard(group)
+                }
+            }
+            if (uiState.results.size > 1) {
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                ResultNavRail(
+                    results = uiState.results,
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                    onJumpTo = onJumpTo
+                )
+            }
+        }
+    }
+}
+
+/** 结果列表右侧的竖向快速跳转条（只显示前两个字）。 */
+@Composable
+private fun ResultNavRail(
+    results: List<CharGroup>,
+    contentPadding: PaddingValues,
+    onJumpTo: (Int) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier
+            .width(36.dp)
+            .fillMaxHeight(),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        itemsIndexed(
+            results,
+            key = { index, group -> resultKey(index, group) }
+        ) { index, group ->
+            Text(
+                text = displayTitle(group.chars).take(2),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .padding(vertical = 2.dp)
+                    .clickable { onJumpTo(index) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun CenteredBox(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
 
 /**
- * 要显示的文字：开了「渲染為簡體中文」就转简体。
- * 读的是 [Simplifier.enabled] 这个 Compose 状态，所以拨动开关会**即时**重组，
- * 不需要重新检索。字組與使用者輸入不走这里（见 CONTEXT.md）。
+ * LazyColumn 的稳定 key：同一张卡在列表中唯一。
+ * 逐字检索时同一个字可能出现两次（如「哈哈」），只用 chars＋subtitle 会撞 key 而崩溃，
+ * 因此把列表下标也带上。
  */
-private fun disp(text: String) = Simplifier.display(text)
+private fun resultKey(index: Int, group: CharGroup) =
+    "${index}:${group.chars}_${group.subtitle}"
 
-/** 搜同源的卡片标题是義項標籤，要转；其余两种模式标题是字組／輸入，不转。 */
-private fun cardTitle(group: CharGroup): String {
-    val title = displayTitle(group.chars)
-    return if (group.charsIsLabel) disp(title) else title
+/** 方言筛选下拉菜单。 */
+@Composable
+private fun DialectFilterMenu(
+    expanded: Boolean,
+    filters: DialectFilters,
+    onDismiss: () -> Unit,
+    onFiltersChange: (DialectFilters) -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        FilterCheckboxItem("湘贛", filters.xiangGan) {
+            onFiltersChange(filters.copy(xiangGan = it))
+        }
+        FilterCheckboxItem("中上江和藍青", filters.zhongShangJiang) {
+            onFiltersChange(filters.copy(zhongShangJiang = it))
+        }
+        FilterCheckboxItem("鄉話和土話", filters.xiangHuaTuHua) {
+            onFiltersChange(filters.copy(xiangHuaTuHua = it))
+        }
+    }
 }
 
 /** One checkbox row inside the dialect-filter dropdown. */
@@ -287,405 +331,3 @@ private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange:
         onClick = {}
     )
 }
-
-/** Small copy button: copies the text built by [buildText] and shows a toast. */
-@Composable
-private fun CopyButton(buildText: () -> String) {
-    val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    DisableSelection {
-        IconButton(
-            onClick = {
-                clipboardManager.setText(AnnotatedString(buildText()))
-                Toast.makeText(context, disp("已複製同源詞"), Toast.LENGTH_SHORT).show()
-            },
-            modifier = Modifier.size(24.dp)
-        ) {
-            Icon(
-                Icons.Default.ContentCopy,
-                contentDescription = "複製同源詞",
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.tertiary
-            )
-        }
-    }
-}
-
-/**
- * Zero-height newline: participates in text selection so copied text keeps
- * line breaks between rows, without adding visual space.
- */
-@Composable
-private fun LineGap() {
-    Text(text = "\n", modifier = Modifier.height(0.dp).clipToBounds())
-}
-
-@Composable
-private fun InfoDialog(
-    viewModel: SearchViewModel,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    var showResetConfirm by remember { mutableStateOf(false) }
-    var resetting by remember { mutableStateOf(false) }
-
-    val latestChangelog = remember {
-        try {
-            val text = context.assets.open("CHANGELOG.md").bufferedReader().use { it.readText() }
-            extractLatestChangelog(text)
-        } catch (e: Exception) { "" }
-    }
-    val readmeText = remember {
-        try {
-            context.assets.open("README.md").bufferedReader().use { it.readText() }
-        } catch (e: Exception) { "" }
-    }
-
-   if (resetting) {
-       AlertDialog(
-           onDismissRequest = {},
-           confirmButton = {},
-           containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-           title = { Text(disp("重置中")) },
-            text = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    CircularProgressIndicator()
-                    Text(disp("正在重新載入資料庫…"))
-                }
-            }
-        )
-        LaunchedEffect(Unit) {
-            viewModel.resetDatabases()
-            resetting = false
-            onDismiss()
-        }
-        return
-    }
-
-   if (showResetConfirm) {
-       AlertDialog(
-           onDismissRequest = { showResetConfirm = false },
-           containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-           title = { Text(disp("重置資料庫")) },
-            text = { Text(disp("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。")) },
-            confirmButton = {
-                TextButton(onClick = { resetting = true }) { Text(disp("重置")) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text(disp("取消")) }
-            }
-        )
-        return
-    }
-
-   Dialog(onDismissRequest = onDismiss) {
-       Surface(
-           shape = RoundedCornerShape(16.dp),
-           color = MaterialTheme.colorScheme.surfaceContainerLow,
-           tonalElevation = 0.dp,
-           modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.85f)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(disp("關於"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    TextButton(onClick = onDismiss) { Text(disp("關閉")) }
-                }
-                HorizontalDivider()
-                Column(
-                    modifier = Modifier
-                        .verticalScroll(rememberScrollState())
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { showResetConfirm = true }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            disp("重置資料庫"),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    // 「渲染為簡體中文 (Beta)」：只影響顯示，不改資料也不改檢索（CONTEXT.md「簡體渲染」）。
-                    // 開關狀態存在 siongdict_prefs，重置資料庫不會動它。
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { Simplifier.setEnabled(context, !Simplifier.enabled) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            disp("渲染為簡體中文 (Beta)"),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Switch(
-                            checked = Simplifier.enabled,
-                            onCheckedChange = { Simplifier.setEnabled(context, it) }
-                        )
-                    }
-
-                    HorizontalDivider()
-
-                    if (latestChangelog.isNotBlank()) {
-                        Text(disp(latestChangelog), fontSize = 13.sp, lineHeight = 20.sp)
-                    }
-
-                    Text(disp(readmeText), fontSize = 13.sp, lineHeight = 20.sp)
-                }
-            }
-        }
-    }
-}
-
-/** Return the first "### version" section of the changelog (header line included). */
-private fun extractLatestChangelog(changelog: String): String {
-    val lines = changelog.lines()
-    val first = lines.indexOfFirst { it.startsWith("### ") }
-    if (first == -1) return changelog
-    val rest = lines.drop(first)
-    val next = rest.indexOfFirst { it.startsWith("### ") }
-    val section = if (next == -1) rest else rest.subList(0, next)
-    return section.joinToString("\n").trim()
-}
-
-@Composable
-private fun ResultCard(group: CharGroup) {
-    val displayChars = cardTitle(group)
-    var collapsed by rememberSaveable { mutableStateOf(false) }
-    val titleSize = when {
-        displayChars.length <= 2 -> 28.sp
-        displayChars.length <= 4 -> 22.sp
-        else -> 16.sp
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        shape = RoundedCornerShape(8.dp)
-   ) {
-        SelectionContainer {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-               .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-       ) {
-         // 字組标题 + 方言数
-           Row(
-               modifier = Modifier.fillMaxWidth(),
-               horizontalArrangement = Arrangement.SpaceBetween,
-               verticalAlignment = Alignment.Bottom
-           ) {
-               Text(
-                   text = displayChars,
-                   fontSize = titleSize,
-                   fontWeight = FontWeight.Bold,
-                   color = MaterialTheme.colorScheme.onSurface
-               )
-               if (group.entries.size > 1) {
-                    DisableSelection {
-                    Row(
-                        modifier = Modifier.clickable { collapsed = !collapsed },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = disp("${group.entries.size} 點"),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = if (collapsed) "＞" else "∨",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    }
-                }
-            }
-            if (group.subtitle.isNotBlank()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = group.subtitle,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.weight(1f)
-                    )
-                    CopyButton { Simplifier.display(buildCharGroupExportText(group)) }
-                }
-            }
-
-           // 各方言点读音
-           if (!collapsed) {
-               group.entries.forEach { dialect ->
-                   DialectBlock(dialect)
-               }
-           }
-        }
-        }
-    }
-}
-
-@Composable
-private fun DialectBlock(dialect: DialectEntry) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-   Column(
-       modifier = Modifier
-           .fillMaxWidth()
-            .padding(top = 2.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-   ) {
-       // 方言名行
-       Row(
-           verticalAlignment = Alignment.CenterVertically,
-           horizontalArrangement = Arrangement.spacedBy(6.dp)
-       ) {
-           Box(
-               modifier = Modifier
-                   .size(6.dp)
-                   .clip(RoundedCornerShape(3.dp))
-                   .background(MaterialTheme.colorScheme.primary)
-           )
-           Text(
-               text = disp(dialect.lang),
-               fontSize = 14.sp,
-               fontWeight = FontWeight.Medium,
-               color = MaterialTheme.colorScheme.primary
-           )
-           if (dialect.cognate != null && dialect.cognate.members.size > 1) {
-               Spacer(modifier = Modifier.weight(1f))
-                DisableSelection {
-               Text(
-                   text = disp("同源 ${dialect.cognate.members.size} 詞"),
-                   fontSize = 11.sp,
-                   color = MaterialTheme.colorScheme.tertiary,
-                   modifier = Modifier.clickable { expanded = !expanded }
-               )
-                }
-           }
-        }
-        // 读音行：IPA 左、註釋右
-        dialect.prons.forEach { p ->
-            Text(
-                text = buildAnnotatedString {
-                    withStyle(SpanStyle(
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )) {
-                        append(p.ipa)
-                    }
-                    if (p.note.isNotBlank()) {
-                        withStyle(SpanStyle(
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )) {
-                            append(" ${disp(p.note)}")
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 14.dp)
-            )
-            LineGap()
-        }
-        // 同源词展开
-        if (expanded && dialect.cognate != null) {
-            CognateExpand(dialect.cognate, dialect.lang)
-        }
-    }
-}
-
-@Composable
-private fun CognateExpand(group: CognateGroup, currentLang: String) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 14.dp, top = 2.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(6.dp)
-    ) {
-       Column(
-           modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-       ) {
-           Row(
-               modifier = Modifier.fillMaxWidth(),
-               verticalAlignment = Alignment.CenterVertically
-           ) {
-               val headerText = if (group.semanticLabel.isNotBlank()) {
-                   "${disp("義類：${group.semanticLabel}")} ${group.groupId}"
-               } else {
-                   group.groupId
-               }
-              Text(
-                  text = headerText,
-                  fontSize = 12.sp,
-                  color = MaterialTheme.colorScheme.tertiary,
-                  fontWeight = FontWeight.Medium,
-                  modifier = Modifier.weight(1f)
-              )
-                 CopyButton { Simplifier.display(buildCognateExportText(group)) }
-            }
-            LineGap()
-            group.members.forEach { m ->
-                val isCurrent = m.lang == currentLang
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                   Text(
-                       text = disp(m.lang),
-                       fontSize = 12.sp,
-                        lineHeight = 14.sp,
-                       color = if (isCurrent) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
-                       fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                       modifier = Modifier.weight(1f)
-                   )
-                   Text(
-                       text = m.ipa,
-                       fontSize = 13.sp,
-                       fontFamily = FontFamily.Monospace,
-                       color = if (isCurrent) MaterialTheme.colorScheme.onSurface
-                               else MaterialTheme.colorScheme.onSurfaceVariant
-                   )
-                }
-                LineGap()
-                }
-            }
-        }
-    }

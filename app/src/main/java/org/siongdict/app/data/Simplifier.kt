@@ -18,8 +18,6 @@ import org.json.JSONObject
  */
 object Simplifier {
     private const val TAG = "Simplifier"
-    private const val PREFS = "siongdict_prefs"
-    private const val KEY_ENABLED = "render_simplified"
     private const val CACHE_MAX = 1024
 
     private val enabledState = mutableStateOf(false)
@@ -40,16 +38,16 @@ object Simplifier {
     /** UI 起来之前调用一次：装表 + 读回开关状态。 */
     fun init(ctx: Context) {
         if (phrases.isEmpty() && chars.isEmpty()) load(ctx)
-        enabledState.value = prefs(ctx).getBoolean(KEY_ENABLED, false)
+        enabledState.value = prefs(ctx).getBoolean(AppPrefs.KEY_RENDER_SIMPLIFIED, false)
     }
 
     fun setEnabled(ctx: Context, on: Boolean) {
         enabledState.value = on
-        prefs(ctx).edit().putBoolean(KEY_ENABLED, on).apply()
+        prefs(ctx).edit().putBoolean(AppPrefs.KEY_RENDER_SIMPLIFIED, on).apply()
     }
 
     private fun prefs(ctx: Context) =
-        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        ctx.getSharedPreferences(AppPrefs.FILE, Context.MODE_PRIVATE)
 
     /** 界面与导出统一走这里；开关关闭时原样返回。 */
     fun display(text: String): String =

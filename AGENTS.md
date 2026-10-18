@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 开发须知
 
-> 给在此仓库工作的 AI／开发者。**2026-10-17 汇总**，代码对应 `0.4-rc.10`。
+> 给在此仓库工作的 AI／开发者。**2026-10-18 汇总**，代码对应 `0.4-rc.11`。
 >
 > ⚠️ **本文件在仓库内、会随仓库一起公开** —— 所以这里只写可公开的事实：不含建置机绝对路径（`/Users/<使用者名>/…`）、
 > 不含任何签名凭证或其口令、不含未公开的个人资料。动代码、资料或发版之前先读一遍。
@@ -9,7 +9,7 @@
 
 - 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索，无需联网。
 - 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
-- 当前版本 **0.4-rc.10**：`versionCode 44`、`versionName "0.4-rc.10"`，只存在于 `app/build.gradle`。
+- 当前版本 **0.4-rc.11**：`versionCode 45`、`versionName "0.4-rc.11"`，只存在于 `app/build.gradle`。
 - 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
 - 资料规模：**480 个方言点**、**596,822 条读音**、122,853 组同音字；同源词 **154 组 / 2,222 条**（全数人工标注，无自动条目）。
 - git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
@@ -42,11 +42,18 @@ git ls-files | grep -E '\.(keystore|jks)$|keystore\.properties'   # 应无输出
 
 ```
 app/src/main/java/org/siongdict/app/
-  MainActivity.kt            入口
-  data/DictDatabase.kt       assets → 私有目录复制、FTS5 查询、变体表载入、版本比对
+  MainActivity.kt            入口（主题 + 首帧前初始化简体渲染）
+  data/AppPrefs.kt           偏好档名与键名（版本记录、简体渲染开关共用）
+  data/DictDatabase.kt       assets → 私有目录复制、只读连接、FTS5 查询、变体表载入、版本比对
   data/Models.kt             资料模型
+  data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
   data/ToneFormatter.kt      声调格式化
-  ui/SearchScreen.kt         全部 UI（搜字音／搜同源／搜释义；说明页直接读 assets 的 README.md、CHANGELOG.md）
+  ui/SearchScreen.kt         检索主界面（搜索栏、模式切换、结果列表与右侧跳转条、方言筛选）
+  ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
+  ui/InfoDialog.kt           「關於」面板（说明页、简体渲染开关、重置資料庫）
+  ui/UiText.kt               显示层文本工具（简体渲染、字组标题）
+  ui/icons/SiongIcons.kt     内联的两个 Material 图标（替代 material-icons-extended）
+  ui/theme/Theme.kt          品牌色与 Material 3 主题
   ui/SearchViewModel.kt      检索、分组、方言筛选
   ui/CognateExport.kt        同源词 CSV 导出
 app/src/main/assets/
@@ -71,14 +78,14 @@ publish/                     本机出包暂存，已 gitignore
 原因有两层：
 
 1. `app/src/main/assets/databases/` 整个目录不在仓库里 —— `.gitignore:10` 的 `*.db` 把两个数据库挡掉了；
-2. 建置期不校验 assets 是否存在。崩溃发生在执行期：`DictDatabase.copyAssetDatabase()` 找不到 `databases/siongdict.db` 会直接抛例外（`DictDatabase.kt:52-60`）。
+2. 建置期不校验 assets 是否存在。崩溃发生在执行期：`DictDatabase.copyAssetDatabase()` 找不到 `databases/siongdict.db` 会直接抛例外（见 `data/DictDatabase.kt`）。
 
 两个文件的性质不同：
 
 | 文件 | 大小 | 缺失后果 |
 | --- | --- | --- |
 | `siongdict.db` | 约 54 MB | **必需**。App 启动即崩。含 `langs`（读音，FTS5）与 `info`（方言点元数据）两张虚拟表。数据库字段名沿用繁体写法（`字組`、`語言`、`讀音`、`註釋`、`排序`），写 SQL 时照抄。 |
-| `cognates.db` | 约 252 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DictDatabase.kt:67-74`）。含 `cognates` 与 `cognate_groups`。 |
+| `cognates.db` | 约 252 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DictDatabase.copyCognateDatabase()`）。含 `cognates` 与 `cognate_groups`。 |
 
 不把 `.db` 纳入版本控制是刻意的：`siongdict.db` 每次音典更新都会整体变动，一旦入库，**每次资料更新都会在 git 历史里永久留下一个 54 MB 的 blob**，仓库很快就会被撑爆。请走 §4 的重建路线，或直接取用 GitHub Release 的 APK。
 
@@ -183,10 +190,11 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4-rc.8 | 42 |
 | 0.4-rc.9 | 43 |
 | 0.4-rc.10 | 44 |
+| 0.4-rc.11 | 45 |
 
 `versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。
 
-**版本号是唯一把新资料推给既有使用者的机制。** `isDatabaseOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DictDatabase.kt:115-118`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
+**版本号是唯一把新资料推给既有使用者的机制。** `isDatabaseOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DictDatabase.isDatabaseOutdated()`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
 
 ### 出包
 
@@ -229,7 +237,7 @@ debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`�
 ## 7. 已知陷阱
 
 1. **`.gitignore` 的 `*.db` 会让 `git add app/src/main/assets/databases/` 静默跳过数据库**，不报错也不提示。真要加得 `git add -f`（本项目政策是只留在本机，见 §1、§3）。
-2. **`README.md` / `CHANGELOG.md` 各有两份，必须逐字节一致。** App 的「说明」页读的是 `app/src/main/assets/` 里那一份（`SearchScreen.kt:320,326`），只改仓库根目录那份，会出现「仓库写的」和「App 显示的」不一致。改完自查：
+2. **`README.md` / `CHANGELOG.md` 各有两份，必须逐字节一致。** App 的「说明」页读的是 `app/src/main/assets/` 里那一份（`ui/InfoDialog.kt` 的 `InfoDialog()`），只改仓库根目录那份，会出现「仓库写的」和「App 显示的」不一致。改完自查：
    ```bash
    md5 README.md app/src/main/assets/README.md
    md5 CHANGELOG.md app/src/main/assets/CHANGELOG.md
