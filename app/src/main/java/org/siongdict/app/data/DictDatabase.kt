@@ -11,9 +11,13 @@ import java.io.FileOutputStream
 /**
  * 字音库（siongdict.db）与同源词库（cognates.db）的访问层。
  *
- * 两个库都随 APK 分发在 assets/databases/ 下，首次启动或版本过期时复制到应用私有目录。
+ * 两个库都随 APK 分发在 assets/databases/ 下，首次使用时复制到应用私有目录
+ * （复制是延迟 + 原子的：不在构造函数里做，也不会留下半截文件）。
  * 连接一律以 **OPEN_READONLY** 打开：App 从不写使用者装置上的资料；
  * 同源词库的连接在进程内复用，避免「每个方言点开关一次 300 KB 的库」。
+ *
+ * **并发约定**：本类只用 synchronized 保护「打开/关闭/复制」这几个动作，
+ * 查询本身不持锁；调用方必须串行调用（App 侧由 SearchViewModel 的 Mutex 保证）。
  */
 class DictDatabase(private val ctx: Context) {
 
@@ -47,38 +51,59 @@ class DictDatabase(private val ctx: Context) {
     private var toneSystemCache: Map<String, JSONObject>? = null
     private var divisionCache: Map<String, String>? = null
 
-    init {
-        ensureDatabaseCopied()
-    }
-
     // ─── 数据库文件与版本 ───
 
-    /** 首次启动、或缓存的字音库版本落后于 [DB_VERSION] 时，从 assets 重新复制。 */
+    /** 预取：在后台线程上把两个库准备好，避免首装的 54 MB 复制卡在主线程。 */
+    @Synchronized
+    fun prepare() {
+        database()
+        cognateDatabase()
+    }
+
+    /**
+     * 文件缺失、损坏（读不出 user_version）或版本落后于 [DB_VERSION] 时，从 assets 重新复制。
+     * 半截文件（复制过程中进程被杀）会在这里被识别并覆盖，不会让 App 一启动就崩。
+     */
+    @Synchronized
     private fun ensureDatabaseCopied() {
         val dbFile = ctx.getDatabasePath(DB_NAME)
-        if (!dbFile.exists()) {
-            copyDatabase()
-            return
+        val cachedVersion = if (dbFile.exists()) {
+            runCatching { openReadOnly(dbFile).use { it.version } }.getOrNull()
+        } else {
+            null
         }
-        val cachedVersion = openReadOnly(dbFile).use { it.version }
-        if (cachedVersion < DB_VERSION) {
-            Log.i(TAG, "Database v$cachedVersion < $DB_VERSION, re-copying from assets")
+        if (cachedVersion == null || cachedVersion < DB_VERSION) {
+            Log.i(TAG, "Database missing/corrupt/outdated (version=$cachedVersion), re-copying from assets")
             dbFile.delete()
             copyDatabase()
         }
     }
 
-    /** Copy a database file from assets/databases/ into the app's database dir. Throws if absent. */
+    /**
+     * 从 assets 复制一个数据库：先写同目录的 `.tmp`，成功后原子改名到正式文件名。
+     * Throws if the asset is absent（与 AGENTS.md §3 的约定一致）。
+     */
     private fun copyAssetDatabase(name: String) {
-        val dbFile = ctx.getDatabasePath(name)
-        dbFile.parentFile?.mkdirs()
-        Log.i(TAG, "Copying $name from assets to ${dbFile.absolutePath}")
-        ctx.assets.open("databases/$name").use { input ->
-            FileOutputStream(dbFile).use { output -> input.copyTo(output) }
+        val target = ctx.getDatabasePath(name)
+        val dir = target.parentFile ?: error("数据库目录不可用：${target.absolutePath}")
+        dir.mkdirs()
+        val tmp = File(dir, "$name.tmp")
+        Log.i(TAG, "Copying $name from assets to ${target.absolutePath}")
+        try {
+            ctx.assets.open("databases/$name").use { input ->
+                FileOutputStream(tmp).use { output -> input.copyTo(output) }
+            }
+            if (!tmp.renameTo(target)) {
+                target.delete()
+                check(tmp.renameTo(target)) { "数据库改名失败：$name" }
+            }
+        } finally {
+            if (tmp.exists()) tmp.delete()
         }
-        Log.i(TAG, "$name copied, size=${dbFile.length()}")
+        Log.i(TAG, "$name copied, size=${target.length()}")
     }
 
+    @Synchronized
     private fun copyDatabase() {
         siongDb?.close()
         siongDb = null
@@ -86,6 +111,7 @@ class DictDatabase(private val ctx: Context) {
         markDatabaseVersion()
     }
 
+    @Synchronized
     private fun copyCognateDatabase() {
         cognateDb?.close()
         cognateDb = null
@@ -100,11 +126,16 @@ class DictDatabase(private val ctx: Context) {
     private fun openReadOnly(file: File): SQLiteDatabase =
         SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
 
-    /** 字音库连接：首次使用时打开，进程内复用。 */
-    private fun database(): SQLiteDatabase =
-        siongDb ?: openReadOnly(ctx.getDatabasePath(DB_NAME)).also { siongDb = it }
+    /** 字音库连接：首次使用时（在调用方线程上）供给文件并打开，进程内复用。 */
+    @Synchronized
+    private fun database(): SQLiteDatabase {
+        siongDb?.let { return it }
+        ensureDatabaseCopied()
+        return openReadOnly(ctx.getDatabasePath(DB_NAME)).also { siongDb = it }
+    }
 
     /** 同源词库连接：缺失时返回 null（「搜同源」自动停用），打开成功后复用。 */
+    @Synchronized
     private fun cognateDatabase(): SQLiteDatabase? {
         cognateDb?.let { return it }
         val file = ctx.getDatabasePath(COG_NAME)
@@ -114,6 +145,7 @@ class DictDatabase(private val ctx: Context) {
     }
 
     /** 删除缓存库文件并重新复制；在「重置資料庫」与版本过期时调用。 */
+    @Synchronized
     fun forceReset() {
         Log.i(TAG, "Force reset: deleting cached databases")
         siongDb?.close()

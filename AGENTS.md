@@ -44,7 +44,7 @@ git ls-files | grep -E '\.(keystore|jks)$|keystore\.properties'   # 应无输出
 app/src/main/java/org/siongdict/app/
   MainActivity.kt            入口（主题 + 首帧前初始化简体渲染）
   data/AppPrefs.kt           偏好档名与键名（版本记录、简体渲染开关共用）
-  data/DictDatabase.kt       assets → 私有目录复制、只读连接、FTS5 查询、变体表载入、版本比对
+  data/DictDatabase.kt       assets → 私有目录复制（延迟 + 原子）、只读连接、FTS5 查询、变体表载入、版本比对
   data/Models.kt             资料模型
   data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
   data/ToneFormatter.kt      声调格式化
@@ -56,6 +56,9 @@ app/src/main/java/org/siongdict/app/
   ui/theme/Theme.kt          品牌色与 Material 3 主题
   ui/SearchViewModel.kt      检索、分组、方言筛选
   ui/CognateExport.kt        同源词 CSV 导出
+app/src/androidTest/java/org/siongdict/app/
+  DataLayerTest.kt           数据层回归（只读连接、异体展开、同源词、声调、forceReset、检索/重置串行化）
+  UiSmokeTest.kt             界面回归（首帧、重复字、三模式、方言筛选、关于面板）
 app/src/main/assets/
   databases/siongdict.db    ★ 不入库，必须自行重建（§3、§4）
   databases/cognates.db     ★ 不入库，必须自行重建；缺失时 App 不会崩，「搜同源」自动停用
@@ -210,6 +213,21 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 **对外一律发 debug 签名的 APK。** `app/build.gradle` 的 `release` buildType 没有 `signingConfig`，`assembleRelease` 产出的是**未签名** APK，装不上。
 
+### 回归测试
+
+16 项仪器化测试（数据层 10 + 界面 6），需要模拟器或真机：
+
+```bash
+# 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
+emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
+adb wait-for-device
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 16/16
+```
+
+- 测试依赖全部走 `androidTestImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
+- 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
+- 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
+
 ### 发 Release
 
 ```bash
@@ -253,6 +271,8 @@ debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`�
    - GitHub Release 挂在 tag 名称上，重写 tag 不影响 Release 本体（0.4-rc.4 的 APK 仍在，未受影响）。
 
    顺带：这次重写也把历史上的 `.kotlin/errors/errors-*.log`（含建置机家目录路径）一并抹掉了。
+
+9. **lint 目前 0 errors / 24 warnings，全部属于「已知可接受」**：7 条 GradleDependency（3 条应用依赖 + 4 条测试依赖/BOM 的版本提示，版本有意固定）、10 条启动图标形状、5 条 round 图标与方图标内容重复、2 条自适应图标缺 monochrome。发版不阻塞；要清掉它们需单独评估图标品牌与依赖升级，不要顺手改。
 
 ---
 

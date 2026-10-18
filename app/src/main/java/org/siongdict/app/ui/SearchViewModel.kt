@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.CognateGroup
 import org.siongdict.app.data.DialectEntry
@@ -18,6 +21,7 @@ import org.siongdict.app.data.PronEntry
 import org.siongdict.app.data.SearchMode
 import org.siongdict.app.data.SearchResult
 import org.siongdict.app.data.ToneFormatter
+import java.util.concurrent.atomic.AtomicInteger
 
 /** 三类方言分区筛选项。全部开启时（[anyHidden] 为 false）可以整段跳过过滤。 */
 data class DialectFilters(
@@ -50,16 +54,28 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
+    /** 所有数据库操作的唯一入口：串行执行 + 固定跑在 IO 线程（DictDatabase 自身不做并发控制）。 */
+    private val dbMutex = Mutex()
+
+    /** 检索代际：只有最新一代的结果允许写回界面，防止慢查询覆盖新查询。 */
+    private val searchSeq = AtomicInteger()
+
+    private suspend fun <T> onDb(block: () -> T): T =
+        dbMutex.withLock { withContext(Dispatchers.IO) { block() } }
+
     init {
         val app = getApplication<Application>()
-        val outdated = db.isDatabaseOutdated()
+        val outdated = db.isDatabaseOutdated() // 只读偏好，主线程安全
         _uiState.update {
             it.copy(dbOutdated = outdated, appVersion = DictDatabase.appVersion(app))
         }
-        if (outdated) {
-            viewModelScope.launch(Dispatchers.IO) {
-                db.forceReset()
+        viewModelScope.launch {
+            if (outdated) {
+                onDb { db.forceReset() }
                 _uiState.update { it.copy(dbOutdated = false) }
+            } else {
+                // 首装/升级后的 54 MB 复制放在这里做，不占主线程；失败会在首次检索时暴露
+                onDb { db.prepare() }
             }
         }
     }
@@ -74,20 +90,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         val state = _uiState.value
         val query = state.query.trim()
         if (query.isEmpty()) return
+        val seq = searchSeq.incrementAndGet()
         _uiState.update { it.copy(loading = true, searched = true, error = null) }
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val results = when (state.mode) {
-                    SearchMode.CHAR -> searchChars(query, state.filters)
-                    SearchMode.COGNATE -> groupCognateResults(
-                        filterCognateGroups(db.searchCognates(query), state.filters)
-                    )
-                    SearchMode.MEANING -> groupResults(
-                        filterResults(db.searchByMeaning(query), state.filters)
-                    )
-                }
+        viewModelScope.launch {
+            val outcome = runCatching { onDb { computeResults(query, state.mode, state.filters) } }
+            if (seq != searchSeq.get()) return@launch // 已被更新的检索或重置作废
+            outcome.onSuccess { results ->
                 _uiState.update { it.copy(results = results, loading = false) }
-            } catch (e: Exception) {
+            }.onFailure { e ->
                 Log.e(TAG, "Search failed", e)
                 _uiState.update {
                     it.copy(
@@ -100,11 +110,31 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 按当前模式跑检索；纯计算，调用方负责串行化与线程调度。 */
+    private fun computeResults(
+        query: String,
+        mode: SearchMode,
+        filters: DialectFilters
+    ): List<CharGroup> = when (mode) {
+        SearchMode.CHAR -> searchChars(query, filters)
+        SearchMode.COGNATE -> groupCognateResults(
+            filterCognateGroups(db.searchCognates(query), filters)
+        )
+        SearchMode.MEANING -> groupResults(filterResults(db.searchByMeaning(query), filters))
+    }
+
     fun resetDatabases() {
-        viewModelScope.launch(Dispatchers.IO) {
-            db.forceReset()
+        searchSeq.incrementAndGet() // 作废在途检索：重置期间旧结果不得回写
+        viewModelScope.launch {
+            onDb { db.forceReset() }
             _uiState.update {
-                it.copy(results = emptyList(), searched = false, error = null, dbOutdated = false)
+                it.copy(
+                    results = emptyList(),
+                    searched = false,
+                    loading = false,
+                    error = null,
+                    dbOutdated = false
+                )
             }
         }
     }

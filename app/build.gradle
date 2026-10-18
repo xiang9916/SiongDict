@@ -11,9 +11,10 @@ android {
     defaultConfig {
         applicationId "org.siongdict.app"
         minSdk 24
-       targetSdk 35
-       versionCode 45
-       versionName "0.4-rc.11"
+        targetSdk 35
+        versionCode 45
+        versionName "0.4-rc.11"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -48,4 +49,11 @@ dependencies {
     // 因此不再需要 material-icons-extended（AAR 约 34 MB）。
     implementation 'androidx.compose.material:material-icons-core'
     implementation 'com.github.requery:sqlite-android:3.49.0'
+
+    // ── 回归测试（只进 androidTest / debug APK，不影响对外发布的 APK）──
+    androidTestImplementation platform('androidx.compose:compose-bom:2024.12.01')
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
 }

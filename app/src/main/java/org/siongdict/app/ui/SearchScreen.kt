@@ -315,7 +315,7 @@ private fun DialectFilterMenu(
     }
 }
 
-/** One checkbox row inside the dialect-filter dropdown. */
+/** One checkbox row inside the dialect-filter dropdown. 整行都可点，不只是那个小方框。 */
 @Composable
 private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     DropdownMenuItem(
@@ -324,10 +324,11 @@ private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange:
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+                // 勾选状态由整行的 onClick 负责，避免勾选框与行各触发一次
+                Checkbox(checked = checked, onCheckedChange = null)
                 Text(disp(label))
             }
         },
-        onClick = {}
+        onClick = { onCheckedChange(!checked) }
     )
 }
