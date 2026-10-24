@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 开发须知
 
-> 给在此仓库工作的 AI／开发者。**2026-10-18 汇总**，代码对应 `0.4-rc.12`。
+> 给在此仓库工作的 AI／开发者。**2026-10-24 汇总**，代码对应 `0.4-rc.12`（数据层重构未发版）。
 >
 > ⚠️ **本文件在仓库内、会随仓库一起公开** —— 所以这里只写可公开的事实：不含建置机绝对路径（`/Users/<使用者名>/…`）、
 > 不含任何签名凭证或其口令、不含未公开的个人资料。动代码、资料或发版之前先读一遍。
@@ -44,21 +44,35 @@ git ls-files | grep -E '\.(keystore|jks)$|keystore\.properties'   # 应无输出
 app/src/main/java/org/siongdict/app/
   MainActivity.kt            入口（主题 + 首帧前初始化简体渲染）
   data/AppPrefs.kt           偏好档名与键名（版本记录、简体渲染开关共用）
-  data/DictDatabase.kt       assets → 私有目录复制（延迟 + 原子）、只读连接、FTS5 查询、变体表载入、版本比对
+  data/AppInfo.kt            读取 versionName（界面标题与数据库版本记录共用）
+  data/DatabaseFiles.kt      assets → 私有目录复制（延迟 + 原子 + 自愈）、只读连接、版本比对、重置
+  data/DbGate.kt             数据层串行化（Mutex + IO 线程），查询与重置的唯一排序点
+  data/Lexicon.kt            字音库端口与本地实现（FTS 检索、info 元数据、变体展开）
+  data/CognateBook.kt        同源词库端口与本地实现（可选库、组查询与显示排序）
+  data/DatabaseMaintenance.kt 供给/重置端口与本地实现
+  data/VariantIndex.kt       繁简/异体展开（assets/variants.json，进程内缓存）
+  data/ToneSystem.kt         声调系统值对象
+  data/ToneFormatter.kt      声调格式化（只接受 ToneSystem）
+  data/LocalData.kt          本地数据层装配根（端口 + 共享设施）
   data/Models.kt             资料模型
   data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
-  data/ToneFormatter.kt      声调格式化
   ui/SearchScreen.kt         检索主界面（搜索栏、模式切换、结果列表与右侧跳转条、方言筛选）
   ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
   ui/InfoDialog.kt           「關於」面板（说明页、简体渲染开关、重置資料庫）
   ui/UiText.kt               显示层文本工具（简体渲染、字组标题）
   ui/icons/SiongIcons.kt     内联的两个 Material 图标（替代 material-icons-extended）
   ui/theme/Theme.kt          品牌色与 Material 3 主题
-  ui/SearchViewModel.kt      检索、分组、方言筛选
+  ui/SearchViewModel.kt      检索、分组、方言筛选（构造注入数据端口，普通 ViewModel）
+  ui/SearchViewModelFactory.kt 生产装配（LocalData → 三个端口注入 ViewModel）
   ui/CognateExport.kt        同源词 CSV 导出
 app/src/androidTest/java/org/siongdict/app/
-  DataLayerTest.kt           数据层回归（只读连接、异体展开、同源词、声调、forceReset、检索/重置串行化）
+  DataLayerTest.kt           数据层回归（只读连接、自愈重拷、异体展开、同源词、声调、重置、检索/重置串行化）
   UiSmokeTest.kt             界面回归（首帧、重复字、三模式、方言筛选、关于面板）
+app/src/test/java/org/siongdict/app/
+  data/ToneFormatterTest.kt  声调格式化（纯函数，JVM）
+  data/VariantIndexTest.kt   变体展开（纯逻辑，JVM）
+  ui/SearchViewModelTest.kt  检索装配/分组/筛选/代际守卫（fake 端口，JVM）
+  fakes/Fakes.kt             测试用 fake 端口
 app/src/main/assets/
   databases/siongdict.db    ★ 不入库，必须自行重建（§3、§4）
   databases/cognates.db     ★ 不入库，必须自行重建；缺失时 App 不会崩，「搜同源」自动停用
@@ -81,14 +95,14 @@ publish/                     本机出包暂存，已 gitignore
 原因有两层：
 
 1. `app/src/main/assets/databases/` 整个目录不在仓库里 —— `.gitignore:10` 的 `*.db` 把两个数据库挡掉了；
-2. 建置期不校验 assets 是否存在。崩溃发生在执行期：`DictDatabase.copyAssetDatabase()` 找不到 `databases/siongdict.db` 会直接抛例外（见 `data/DictDatabase.kt`）。
+2. 建置期不校验 assets 是否存在。崩溃发生在执行期：`DatabaseFiles.copyAssetDatabase()` 找不到 `databases/siongdict.db` 会直接抛例外（见 `data/DatabaseFiles.kt`）。
 
 两个文件的性质不同：
 
 | 文件 | 大小 | 缺失后果 |
 | --- | --- | --- |
 | `siongdict.db` | 约 54 MB | **必需**。App 启动即崩。含 `langs`（读音，FTS5）与 `info`（方言点元数据）两张虚拟表。数据库字段名沿用繁体写法（`字組`、`語言`、`讀音`、`註釋`、`排序`），写 SQL 时照抄。 |
-| `cognates.db` | 约 252 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DictDatabase.copyCognateDatabase()`）。含 `cognates` 与 `cognate_groups`。 |
+| `cognates.db` | 约 252 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DatabaseFiles.copyCognateDatabase()`）。含 `cognates` 与 `cognate_groups`。 |
 
 不把 `.db` 纳入版本控制是刻意的：`siongdict.db` 每次音典更新都会整体变动，一旦入库，**每次资料更新都会在 git 历史里永久留下一个 54 MB 的 blob**，仓库很快就会被撑爆。请走 §4 的重建路线，或直接取用 GitHub Release 的 APK。
 
@@ -164,7 +178,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 - 组名后缀是**音类标签**，**不保证等于组内某个成员的今读**：`Press_gin6`/`gin6`/`ɣan6`/`dzen6` 用的是中古音类名，`Curse_tʂʰak8`（成员今读是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成员是 sa1/sa5/sa7…）、`SetUp_tun5`（成员是 tən5/ten5/tuen5/tin5…）用的是该音类的代表读音。2026-10-08 审计时 141 组里有 100 组如此，是正常结构，按既有组名使用即可；
 - `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是这条规则的实现，自动分组与人工条目都走它。
 
-**「搜同源」结果的排序（2026-10-08 定案）：** 一律按 `cognate_group`（卡片副标那行英文，`<义项>_<音类>`）**不分大小写的字母序**，与命中相关度、方言点数多寡都无关。实现在 `DictDatabase.searchCognates()` 尾端的 `COGNATE_DISPLAY_ORDER`，改那个比较器就等于改全 App 的显示顺序；组**内**成员仍按 `sort_key`（音典排序）排列，两套顺序各自独立。
+**「搜同源」结果的排序（2026-10-08 定案）：** 一律按 `cognate_group`（卡片副标那行英文，`<义项>_<音类>`）**不分大小写的字母序**，与命中相关度、方言点数多寡都无关。实现在 `LocalCognateBook.search()` 尾端的 `COGNATE_DISPLAY_ORDER`，改那个比较器就等于改全 App 的显示顺序；组**内**成员仍按 `sort_key`（音典排序）排列，两套顺序各自独立。
 
 **入组硬规则（2026-10-08 定案，见 `docs/adr/0005-entries-must-have-gloss.md`）：** 新增同源词条必须**同时**满足 ——
 ① 该读音在字音库里 `註釋` 非空（**全库 67% 的行没有注释**，入组候选一律取自注释非空的行）；
@@ -198,7 +212,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 `versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。
 
-**版本号是唯一把新资料推给既有使用者的机制。** `isDatabaseOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DictDatabase.isDatabaseOutdated()`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
+**版本号是唯一把新资料推给既有使用者的机制。** `isOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DatabaseMaintenance.isOutdated()`，实现是 `DatabaseFiles.isOutdated()`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
 
 ### 出包
 
@@ -216,16 +230,17 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-16 项仪器化测试（数据层 10 + 界面 6），需要模拟器或真机：
+17 项仪器化测试（数据层 11 + 界面 6），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 16/16
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 17/17
 ```
 
-- 测试依赖全部走 `androidTestImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
+- 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
+- 另有 24 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
 

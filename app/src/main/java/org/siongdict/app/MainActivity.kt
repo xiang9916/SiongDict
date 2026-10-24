@@ -8,11 +8,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import org.siongdict.app.data.Simplifier
 import org.siongdict.app.ui.SearchScreen
+import org.siongdict.app.ui.SearchViewModelFactory
 import org.siongdict.app.ui.theme.SiongTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val viewModelFactory by lazy { SearchViewModelFactory(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -24,7 +29,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SearchScreen()
+                    SearchScreen(viewModel = viewModel(factory = viewModelFactory))
                 }
             }
         }

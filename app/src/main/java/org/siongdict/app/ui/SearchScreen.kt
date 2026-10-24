@@ -51,7 +51,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.SearchMode
@@ -60,7 +59,7 @@ import org.siongdict.app.ui.theme.SiongDarkRed
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchScreen(viewModel: SearchViewModel = viewModel()) {
+fun SearchScreen(viewModel: SearchViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()

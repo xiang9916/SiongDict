@@ -35,6 +35,11 @@ android {
     buildFeatures {
         compose true
     }
+
+    testOptions {
+        // ViewModel 的失败路径会调用 android.util.Log；JVM 单测里让它变成 no-op
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -56,4 +61,8 @@ dependencies {
     androidTestImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+
+    // ── JVM 单元测试（不需要模拟器；不进对外发布的 APK）──
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
 }

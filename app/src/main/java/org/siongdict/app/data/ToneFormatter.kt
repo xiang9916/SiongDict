@@ -1,22 +1,23 @@
 package org.siongdict.app.data
 
-import org.json.JSONObject
 import java.util.regex.Pattern
 
 /**
  * Formats IPA by converting the trailing tone category number into
- * Unicode tone contour letters, using the dialect's tone system JSON
- * from the info table.
+ * Unicode tone contour letters, using the dialect's tone system.
  *
  * Example: "tən1" with tone system {"1": ["334", ...], ...}
  *   -> "tən˧˧˦1"
+ *
+ * 本对象只接受已解析的 [ToneSystem]：JSON 解析在数据层完成，显示选择留在显示层
+ * （见 docs/adr/0003、docs/adr/0006）。
  */
 object ToneFormatter {
 
     // Regex: group 1 = syllable (non-digit prefix), group 2 = tone category
     private val pattern = Pattern.compile("^(.+?)([0-9]{1,2}[a-z=-]?)$")
 
-    // MCPDict tone system JSON arrays always carry 5 style fields; [0] is the tone value
+    // MCPDict tone system arrays always carry 5 style fields; [0] is the tone value
     private const val TONE_STYLE_FIELD_COUNT = 5
 
     // Unicode tone bar characters for digits 0-6
@@ -30,6 +31,9 @@ object ToneFormatter {
         '\u02C0'  // 6 -> ˀ
     )
 
+    // 已格式化过的音节部分会以这些调符结尾；再次格式化时原样返回（幂等）。
+    private val contourChars = setOf('\u02E9', '\u02E8', '\u02E7', '\u02E6', '\u02E5')
+
     /**
      * Convert a tone value string (e.g. "334") to contour letters (e.g. "˧˧˦").
      * Handles "/" separator for alternative tones.
@@ -40,7 +44,7 @@ object ToneFormatter {
         }
         val sb = StringBuilder()
         for (c in tv) {
-            if (c >= '0' && c <= '6') {
+            if (c in '0'..'6') {
                 sb.append(toneBars[c - '0'])
             } else {
                 sb.append(c)
@@ -50,13 +54,13 @@ object ToneFormatter {
     }
 
     /**
-     * Format an IPA string using the given tone system JSON.
+     * Format an IPA string using the given tone system.
      *
      * @param ipa        raw IPA from the langs table, e.g. "tən1"
-     * @param toneSystem parsed 聲調 JSON for the dialect, or null
+     * @param toneSystem parsed 聲調 value for the dialect, or null
      * @return formatted IPA, e.g. "tən˧˧˦1"
      */
-    fun format(ipa: String, toneSystem: JSONObject?): String {
+    fun format(ipa: String, toneSystem: ToneSystem?): String {
         if (toneSystem == null) return ipa
         if (ipa.length < 2) return ipa
         if (Character.isDigit(ipa[0])) return ipa
@@ -68,26 +72,22 @@ object ToneFormatter {
         val tone = matcher.group(2)
         if (tone.isNullOrEmpty()) return ipa
 
+        // 幂等：音节已带调符，视为已格式化，不再追加。
+        if (base.last() in contourChars) return ipa
+
         // Split tone category digits from modifiers (-/=) for tone system lookup
         val toneDigit = tone.filter { it in '0'..'9' }
         val toneSuffix = tone.filter { it !in '0'..'9' }
 
-        // Tone 0 (glottal/light tone) drops the digit entirely
+        // Tone 0 (glottal/light tone) drops the digit when there is no tone system entry
         fun fallback() = if (toneDigit == "0") base else base + toneDigit + toneSuffix
 
-        // Look up the tone category in the tone system JSON
-        val styles = try {
-            toneSystem.optJSONArray(toneDigit)
-                // If not found by digit alone, try the full key (e.g. "2a" for 湘鄉)
-                ?: toneSystem.optJSONArray(tone)
-        } catch (e: Exception) {
-            null
-        }
-
-        if (styles == null || styles.length() != TONE_STYLE_FIELD_COUNT) return fallback()
+        // Look up the tone category first by digit, then by the full key (e.g. "2a" for 湘鄉)
+        val styles = toneSystem.styles[toneDigit] ?: toneSystem.styles[tone]
+        if (styles == null || styles.size != TONE_STYLE_FIELD_COUNT) return fallback()
 
         // styles[0] = tone value (e.g. "334")
-        val tv = styles.optString(0, "")
+        val tv = styles[0]
         if (tv.isEmpty()) return fallback()
 
         return base + toneValueToContour(tv) + toneDigit + toneSuffix
