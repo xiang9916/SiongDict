@@ -1,6 +1,7 @@
 package org.siongdict.app
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -183,4 +184,47 @@ class DataLayerTest {
         val after = waitForState(vm) { !it.loading && it.results.isNotEmpty() }
         assertTrue("重置后应能继续检索", after.results.isNotEmpty())
     }
+
+    /**
+     * 同源词库存与调类不变量：组数、条数、本版新增的 14 组、两腿分開的调类范围，
+     * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
+     */
+    @Test
+    fun cognateInventoryMatchesRelease() = runBlocking {
+        val d = data()
+        d.maintenance.prepare()
+        val db = SQLiteDatabase.openDatabase(
+            ctx.getDatabasePath("cognates.db").absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            fun scalar(sql: String, vararg args: String): Int =
+                db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
+
+            assertEquals(2349, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(168, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+
+            val added = listOf(
+                "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
+                "Bottom_tuk7", "Heel_lɔŋ8", "Swing_xuak7", "Wing_ie8",
+                "InsistOn_tai1", "InsistOn_tan1", "Calf_ȵiau2", "Calf_ȵiam2",
+                "SpreadLegs_ba4", "Provoke_ȵiaŋ1", "Collide_guan4"
+            )
+            for (g in added) {
+                assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
+            }
+
+            assertEquals(
+                "两腿分開只收调类 3/6",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'SpreadLegs_ba4' AND tone_cat NOT IN ('3','6')")
+            )
+            assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Saw_ge4'"))
+            assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE lang = '東安橫塘'"))
+        } finally {
+            db.close()
+        }
+    }
+
 }

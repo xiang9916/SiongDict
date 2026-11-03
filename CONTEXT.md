@@ -45,7 +45,7 @@ _Avoid_: 模糊搜寻、容错搜寻
 _Avoid_: 简体模式、简繁转换
 
 **字音库**：
-`siongdict.db`，480 个方言点的读音（`langs`）与元数据（`info`）。App 侧经 `Lexicon` 端口读取。
+`siongdict.db`，488 个方言点的读音（`langs`）与元数据（`info`）。App 侧经 `Lexicon` 端口读取。
 _Avoid_: 主库、读音库
 
 **同源词库**：

@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 开发须知
 
-> 给在此仓库工作的 AI／开发者。**2026-10-24 汇总**，代码对应 `0.4-rc.12`（数据层重构未发版）。
+> 给在此仓库工作的 AI／开发者。**2026-11-03 汇总**，代码对应 `0.4-rc.13`。
 >
 > ⚠️ **本文件在仓库内、会随仓库一起公开** —— 所以这里只写可公开的事实：不含建置机绝对路径（`/Users/<使用者名>/…`）、
 > 不含任何签名凭证或其口令、不含未公开的个人资料。动代码、资料或发版之前先读一遍。
@@ -9,9 +9,9 @@
 
 - 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索，无需联网。
 - 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
-- 当前版本 **0.4-rc.12**：`versionCode 46`、`versionName "0.4-rc.12"`，只存在于 `app/build.gradle`。
+- 当前版本 **0.4-rc.13**：`versionCode 47`、`versionName "0.4-rc.13"`，只存在于 `app/build.gradle`。
 - 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
-- 资料规模：**480 个方言点**、**596,822 条读音**、122,853 组同音字；同源词 **154 组 / 2,222 条**（全数人工标注，无自动条目）。
+- 资料规模：**488 个方言点**、**604,504 条读音**、123,898 组同音字；同源词 **168 组 / 2,349 条**（全数人工标注，无自动条目）。
 - git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
 - `.git` 约 **9 MB**：2026-10-04 重写过一次历史，把非代码大档全部剔除（见 §7.8）。**该日之前的 clone 已与远端分岔，请重新 clone 后再推送。**
 - 全部读音资料来自 [汉字音典 MCPDict](https://github.com/osfans/MCPDict)。本项目只做三件事：筛选湘语相关方言点、重建检索索引、人工标注同源词。
@@ -101,10 +101,10 @@ publish/                     本机出包暂存，已 gitignore
 
 | 文件 | 大小 | 缺失后果 |
 | --- | --- | --- |
-| `siongdict.db` | 约 54 MB | **必需**。App 启动即崩。含 `langs`（读音，FTS5）与 `info`（方言点元数据）两张虚拟表。数据库字段名沿用繁体写法（`字組`、`語言`、`讀音`、`註釋`、`排序`），写 SQL 时照抄。 |
-| `cognates.db` | 约 252 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DatabaseFiles.copyCognateDatabase()`）。含 `cognates` 与 `cognate_groups`。 |
+| `siongdict.db` | 约 55 MB | **必需**。App 启动即崩。含 `langs`（读音，FTS5）与 `info`（方言点元数据）两张虚拟表。数据库字段名沿用繁体写法（`字組`、`語言`、`讀音`、`註釋`、`排序`），写 SQL 时照抄。 |
+| `cognates.db` | 约 300 KB | **可选**。只记一条 warn，App 正常跑，「搜同源」停用（`DatabaseFiles.copyCognateDatabase()`）。含 `cognates` 与 `cognate_groups`。 |
 
-不把 `.db` 纳入版本控制是刻意的：`siongdict.db` 每次音典更新都会整体变动，一旦入库，**每次资料更新都会在 git 历史里永久留下一个 54 MB 的 blob**，仓库很快就会被撑爆。请走 §4 的重建路线，或直接取用 GitHub Release 的 APK。
+不把 `.db` 纳入版本控制是刻意的：`siongdict.db` 每次音典更新都会整体变动，一旦入库，**每次资料更新都会在 git 历史里永久留下一个 55 MB 的 blob**，仓库很快就会被撑爆。请走 §4 的重建路线，或直接取用 GitHub Release 的 APK。
 
 ## 4. 从 fork 到能跑：最短路径
 
@@ -156,7 +156,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 # 2) 重跑 §4 的四支脚本
 
 # 3) 同步文件数字
-#    README.md 的「480 个方言点、122,853 组同音字、596,822 条读音」
+#    README.md 的「488 个方言点、123,898 组同音字、604,504 条读音」
 #    CHANGELOG.md 新增顶部条目
 #    然后把这两份复制到 app/src/main/assets/（见 §7.2）
 
@@ -185,7 +185,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 ② 注释的语义与该组**义项**相符，且经人工确认。
 **「音类对得上」只是必要条件，入组理由须是注释语义相符**：同点同韵母里挤着几百个字，`SetUp_tun5` 就出现过
 同点同韵母的 `敦 ten1` 注释是「敦促」、与该组的「敦／竖起」不是一个词。本规则**不追溯存量**
-（现有 2,222 条成员中 521 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
+（现有 2,349 条成员中 523 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
 
 维护者另有一套本机技能（同韵母比较判归音类、桥字验证、人工编辑同源词、CSV 导出）——**不随仓库分发**，仓库内的 `tools/*.py` 才是唯一事实来源。
 
@@ -209,6 +209,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4-rc.10 | 44 |
 | 0.4-rc.11 | 45 |
 | 0.4-rc.12 | 46 |
+| 0.4-rc.13 | 47 |
 
 `versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。
 
@@ -230,19 +231,20 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-17 项仪器化测试（数据层 11 + 界面 6），需要模拟器或真机：
+18 项仪器化测试（数据层 12 + 界面 6），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 17/17
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 18/18
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
 - 另有 24 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
+- `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、「两腿分開」调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
 
 ### 发 Release
 
