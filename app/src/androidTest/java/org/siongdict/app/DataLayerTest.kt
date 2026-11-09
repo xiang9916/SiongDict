@@ -202,8 +202,8 @@ class DataLayerTest {
             fun scalar(sql: String, vararg args: String): Int =
                 db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
 
-            assertEquals(2406, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(174, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2485, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(182, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -211,7 +211,9 @@ class DataLayerTest {
                 "InsistOn_tai1", "InsistOn_tan1", "Calf_ȵiau2", "Calf_ȵiam2",
                 "SpreadLegs_ba4", "Provoke_ȵiaŋ1", "Collide_guan4",
                 "Bumpy_pʰau3", "Loom_lɔm2",
-                "Hiccup_sut7", "Hiccup_ŋek8", "Burp_ge4", "Burp_ke5"
+                "Hiccup_sut7", "Hiccup_ŋek8", "Burp_ge4", "Burp_ke5",
+                "Shout_yak8", "Shout_tɕya5", "Shout_ŋɔŋ1", "Shout_bau2",
+                "Shout_ɣau2", "Shout_o5", "Shout_uai7", "Shout_si1"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
@@ -239,6 +241,14 @@ class DataLayerTest {
             assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hiccup_ŋek8'"))
             assertEquals(21, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Burp_ge4'"))
             assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Burp_ke5'"))
+            assertEquals(33, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_yak8'"))
+            assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_tɕya5'"))
+            assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ŋɔŋ1'"))
+            assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_bau2'"))
+            assertEquals(7, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ɣau2'"))
+            assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_o5'"))
+            assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_uai7'"))
+            assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_si1'"))
             assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Saw_ge4'"))
             assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE lang = '東安橫塘'"))
         } finally {
