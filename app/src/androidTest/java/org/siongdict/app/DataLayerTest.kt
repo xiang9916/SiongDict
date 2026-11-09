@@ -186,7 +186,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：组数、条数、本版新增的 28 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：组数、条数、本版新增的 29 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -202,8 +202,8 @@ class DataLayerTest {
             fun scalar(sql: String, vararg args: String): Int =
                 db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
 
-            assertEquals(2489, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(182, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2531, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(183, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -213,7 +213,8 @@ class DataLayerTest {
                 "Bumpy_pʰau3", "Loom_lɔm2",
                 "Hiccup_sut7", "Hiccup_ŋek8", "Burp_ge4", "Burp_ke5",
                 "Shout_yak8", "Shout_tɕya5", "Shout_ŋɔŋ1", "Shout_bau2",
-                "Shout_ɣau2", "Shout_o5", "Shout_uai7", "Shout_si1"
+                "Shout_ɣau2", "Shout_o5", "Shout_uai7", "Shout_si1",
+                "Poking_ŋen3"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
@@ -250,6 +251,7 @@ class DataLayerTest {
             assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_uai7'"))
             assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_si1'"))
             assertEquals(43, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Scald_ɦok8'"))
+            assertEquals(42, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Poking_ŋen3'"))
             assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Saw_ge4'"))
             assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE lang = '東安橫塘'"))
         } finally {
