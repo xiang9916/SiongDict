@@ -172,10 +172,10 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 **组名与义项的写法（2026-10-08 统一，英文一律大驼峰）：**
 
-- `cognate_group` = `<义项>_<音类>`：`Press_gin6`、`Hide_dzɔŋ2`、`Segment_CutOpen_ʂak7`；
+- `cognate_group` = `<义项>_<音类>`：`Press_gin4`、`Hide_dzɔŋ2`、`Segment_CutOpen_ʂak7`；
 - `semantic_label` = **繁体中文**标签（前端显示用，如 `鋸`、`彎腰`）；`semantic_tag` = **义项**，即组名去掉末尾那段音类：`Press`、`Hide`、`Segment_CutOpen`。**一个义项下挂多个音类组是正确结构**——`Hide` 挂 8 组、`Press` 4 组、`Attach`/`Curse`/`Fuck` 各 4 组；
 - 驼峰只作用于**纯 A–Z 字母**段；含音标或数字的段原样保留（`DJNbo2_bo2` 这类音类组不动），多词复合义项按语义切词（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）；
-- 组名后缀是**音类标签**，**不保证等于组内某个成员的今读**：`Press_gin6`/`gin6`/`ɣan6`/`dzen6` 用的是中古音类名，`Curse_tʂʰak8`（成员今读是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成员是 sa1/sa5/sa7…）、`SetUp_tun5`（成员是 tən5/ten5/tuen5/tin5…）用的是该音类的代表读音。2026-10-08 审计时 141 组里有 100 组如此，是正常结构，按既有组名使用即可；
+- 组名后缀是**音类标签**，**不保证等于组内某个成员的今读**：`Press_gin4`/`gin4`/`ɣan6`/`dzen4` 用的是中古音类名，`Curse_tʂʰak8`（成员今读是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成员是 sa1/sa5/sa7…）、`SetUp_tun5`（成员是 tən5/ten5/tuen5/tin5…）用的是该音类的代表读音。2026-10-08 审计时 141 组里有 100 组如此，是正常结构，按既有组名使用即可；
 - `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是这条规则的实现，自动分组与人工条目都走它。
 
 **「搜同源」结果的排序（2026-10-08 定案）：** 一律按 `cognate_group`（卡片副标那行英文，`<义项>_<音类>`）**不分大小写的字母序**，与命中相关度、方言点数多寡都无关。实现在 `LocalCognateBook.search()` 尾端的 `COGNATE_DISPLAY_ORDER`，改那个比较器就等于改全 App 的显示顺序；组**内**成员仍按 `sort_key`（音典排序）排列，两套顺序各自独立。

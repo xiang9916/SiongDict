@@ -89,7 +89,7 @@ class SearchViewModelTest {
         cognates.onSearch = {
             listOf(
                 cognateGroup(
-                    "Press_gin6",
+                    "Press_gin4",
                     "按",
                     cognateEntry("乙", "gin6", sortKey = "02"),
                     cognateEntry("甲", "gin6", sortKey = "01")
@@ -106,7 +106,7 @@ class SearchViewModelTest {
 
         val card = vm.uiState.value.results.single()
         assertEquals("按", card.chars)
-        assertEquals("Press_gin6", card.subtitle)
+        assertEquals("Press_gin4", card.subtitle)
         assertTrue(card.charsIsLabel)
         assertEquals(listOf("甲", "乙"), card.entries.map { it.lang })
     }

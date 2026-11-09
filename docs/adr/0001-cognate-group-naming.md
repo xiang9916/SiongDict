@@ -2,7 +2,7 @@
 
 2026-10-08 之前，组名混用全大写（`PRESS_gin6`、`Wet_hai7` 并存），`semantic_tag` 有的存整组名、有的存裸义类（`ATTACH`），还出现过指向不存在组名的脏值（`Curse_tʂʰak8` 的 tag 写成了 `CURSE_ʈʰa1`）。
 
-统一为：`cognate_group = <义项>_<音类标签>`，英文段一律大驼峰（`Press_gin6`、`Segment_CutOpen_ʂak7`）；`semantic_tag` 只存义项（`Press`），**一个义项下挂多个音类组是正常结构**（`Hide` 8 组、`Press` 4 组）。只有纯 A–Z 字母段参与转换，含音标或数字的段原样保留（`DJNbo2_bo2` 不动），多词复合义项按语义切词（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）。
+统一为：`cognate_group = <义项>_<音类标签>`，英文段一律大驼峰（`Press_gin4`、`Segment_CutOpen_ʂak7`）；`semantic_tag` 只存义项（`Press`），**一个义项下挂多个音类组是正常结构**（`Hide` 8 组、`Press` 4 组）。只有纯 A–Z 字母段参与转换，含音标或数字的段原样保留（`DJNbo2_bo2` 不动），多词复合义项按语义切词（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）。
 
 ## Considered Options
 
@@ -12,3 +12,10 @@
 ## Consequences
 
 组名是外部引用契约——改名必须同步 CSV 导出、App 卡片与技能脚本，且**已发布版本的 CHANGELOG 条目保留当时的写法**，改名只作用于之后的版本。实现落在 `tools/cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()`，自动分组与人工录入都走它。
+
+## 补记
+
+- **2026-11-09 音类标签更正**：`Press_dzen6`／`Press_gien6`／`Press_gin6` 三组的音类标签由 6 更正为 **4**
+  （即 `Press_dzen4`／`Press_gien4`／`Press_gin4`，成员与 `semantic_tag`／`semantic_label` 不变）。
+  同一义项下 `Press_ɣan6` 维持原标签。按本文 Consequences，**已发布版本的 CHANGELOG 条目保留旧写法**，
+  改名只作用于当前库与之后的版本。

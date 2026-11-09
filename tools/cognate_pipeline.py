@@ -83,7 +83,7 @@ SUPPRESSED_SEMANTIC_TAGS = {"HIDE"}
 
 # ─── 組名與義項的寫法（2026-10-08 統一）───
 #
-#  組名 = `<義項>_<音類>`，如 Press_gin6、Hide_dzɔŋ2、Segment_CutOpen_ʂak7
+#  組名 = `<義項>_<音類>`，如 Press_gin4、Hide_dzɔŋ2、Segment_CutOpen_ʂak7
 #  義項 = 組名去掉末尾那段音類，如 Press、Hide、Segment_CutOpen
 #
 # 一個義項可以掛多個音類組（Hide 掛 8 組、Press 掛 4 組），義項寫進
