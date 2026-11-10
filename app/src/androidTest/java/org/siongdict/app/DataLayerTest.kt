@@ -186,7 +186,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：组数、条数、本版新增的 29 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：组数、条数、本版新增的 30 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -202,8 +202,8 @@ class DataLayerTest {
             fun scalar(sql: String, vararg args: String): Int =
                 db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
 
-            assertEquals(2531, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(183, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2536, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(184, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -212,13 +212,54 @@ class DataLayerTest {
                 "SpreadLegs_ba4", "Provoke_ȵiaŋ1", "Collide_guan4",
                 "Bumpy_pʰau3", "Loom_lɔm2",
                 "Hiccup_sut7", "Hiccup_ŋek8", "Burp_ge4", "Burp_ke5",
-                "Shout_yak8", "Shout_tɕya5", "Shout_ŋɔŋ1", "Shout_bau2",
+                "Shout_wiak8", "Shout_tɕwia5", "Shout_ŋɔŋ1", "Shout_bau2",
                 "Shout_ɣau2", "Shout_o5", "Shout_uai7", "Shout_si1",
-                "Poking_ŋen3"
+                "Poking_ŋen3", "Poking_am5"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
             }
+
+            // 2026-11-10 用户裁决：8 组音类标签改名，成员与条数不变，旧名不得残留。
+            val renamed = listOf(
+                "Crop_swi5" to "Crop_sy5",
+                "Shout_wiak8" to "Shout_yak8",
+                "Bend_wit7" to "Bend_yt7",
+                "Shout_tɕwia5" to "Shout_tɕya5",
+                "Drink_swiet7" to "Drink_syet7",
+                "Shadow_wiaŋ3" to "Shadow_yaŋ3",
+                "Sew_lwien2" to "Sew_lyen2",
+                "Curse_kwiet7" to "Curse_kyet7"
+            )
+            for ((newName, oldName) in renamed) {
+                assertTrue(
+                    "改名后缺少同源词组 $newName",
+                    scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", newName) >= 2
+                )
+                assertEquals(
+                    "旧组名 $oldName 不得残留在 cognates",
+                    0,
+                    scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", oldName)
+                )
+                assertEquals(
+                    "旧组名 $oldName 不得残留在 cognate_groups",
+                    0,
+                    scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = ?", oldName)
+                )
+            }
+
+            // 2026-11-10 用户裁决：新建 Poking_am5，5 条、final 全 an、调类跨 3/5/6。
+            assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Poking_am5'"))
+            assertEquals(
+                "Poking_am5 只收 -an 韵",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Poking_am5' AND final <> 'an'")
+            )
+            assertEquals(
+                "Poking_am5 调类限 3/5/6",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Poking_am5' AND tone_cat NOT IN ('3','5','6')")
+            )
 
             assertEquals(
                 "两腿分開只收调类 3/6",
@@ -242,8 +283,8 @@ class DataLayerTest {
             assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hiccup_ŋek8'"))
             assertEquals(21, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Burp_ge4'"))
             assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Burp_ke5'"))
-            assertEquals(34, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_yak8'"))
-            assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_tɕya5'"))
+            assertEquals(34, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_wiak8'"))
+            assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_tɕwia5'"))
             assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ŋɔŋ1'"))
             assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_bau2'"))
             assertEquals(7, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ɣau2'"))
