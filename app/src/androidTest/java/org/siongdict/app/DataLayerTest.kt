@@ -186,7 +186,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：组数、条数、本版新增的 30 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：组数、条数、本版新增的 32 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -202,8 +202,8 @@ class DataLayerTest {
             fun scalar(sql: String, vararg args: String): Int =
                 db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
 
-            assertEquals(2536, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(184, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2577, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(186, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -214,7 +214,8 @@ class DataLayerTest {
                 "Hiccup_sut7", "Hiccup_ŋek8", "Burp_ge4", "Burp_ke5",
                 "Shout_wiak8", "Shout_tɕwia5", "Shout_ŋɔŋ1", "Shout_bau2",
                 "Shout_ɣau2", "Shout_o5", "Shout_uai7", "Shout_si1",
-                "Poking_ŋen3", "Poking_am5"
+                "Poking_ŋen3", "Poking_am5",
+                "Suck_tswin1", "Suck_tsʰwien3"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
@@ -260,6 +261,39 @@ class DataLayerTest {
                 0,
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Poking_am5' AND tone_cat NOT IN ('3','5','6')")
             )
+
+            // 2026-11-10 用户裁决：原拟 A1（Suck_tsin1）与 A2（Suck_tɕyn1）合并为 Suck_tswin1（33 条），
+            // B 类单独为 Suck_tsʰwien3（8 条）；tswin1 是词源层面的合并标签，不表示各点同韵。
+            assertEquals(33, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Suck_tswin1'"))
+            assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Suck_tsʰwien3'"))
+            assertTrue(
+                "Suck_tswin1 合并前 A1/A2 分属不同韵类，final 应有多种",
+                scalar("SELECT COUNT(DISTINCT final) FROM cognates WHERE cognate_group = 'Suck_tswin1'") >= 15
+            )
+            assertEquals(
+                "Suck_tswin1 应同时含 in/yn/ueŋ/uən 四类韵母",
+                4,
+                scalar("SELECT COUNT(DISTINCT final) FROM cognates WHERE cognate_group = 'Suck_tswin1' AND final IN ('in','yn','ueŋ','uən')")
+            )
+            assertEquals(
+                "Suck_tswin1 调类限阴平 1",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Suck_tswin1' AND tone_cat <> '1'")
+            )
+            assertEquals(
+                "Suck_tsʰwien3 调类限上声 3",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Suck_tsʰwien3' AND tone_cat <> '3'")
+            )
+            assertEquals(
+                "Suck 两组须同名义项 Suck/吸吮",
+                0,
+                scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group IN ('Suck_tswin1','Suck_tsʰwien3') AND (semantic_tag <> 'Suck' OR semantic_label <> '吸吮')")
+            )
+            for (oldName in listOf("Suck_tsin1", "Suck_tɕyn1")) {
+                assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", oldName))
+                assertEquals(0, scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = ?", oldName))
+            }
 
             assertEquals(
                 "两腿分開只收调类 3/6",
