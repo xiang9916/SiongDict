@@ -186,7 +186,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：组数、条数、本版新增的 37 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：组数、条数、本版新增的 38 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -225,8 +225,8 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            assertEquals(2622, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(191, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2634, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(192, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -240,7 +240,7 @@ class DataLayerTest {
                 "Poking_ŋen3", "Poking_am5",
                 "Suck_tswin1", "Suck_tsʰwien3",
                 "Greedy_soŋ2",
-                "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tæ3"
+                "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tæ3", "Fat_dut8"
             )
             for (g in added) {
                 // Hit_tæ3 是本版唯一的单点单条组（桑植芙蓉橋 tæ3），其余新增组均至少 2 条。
@@ -573,6 +573,92 @@ class DataLayerTest {
                     "桑植芙蓉橋|tæ3"
                 ).sorted(),
                 members("Hit_tæ3").sorted()
+            )
+
+            // 2026-11-13 用户裁决：长沙系「腯」12 条按 Fat（肥胖）同义项新建 Fat_dut8（音类 沒韻 *-ət），
+            // 与 Fat_nap8 并列；注释原样保留「膩/厭煩」，属 ADR-0005 附录登记的语义例外。
+            assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Fat_dut8'"))
+            assertEquals(12, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Fat_dut8'"))
+            assertEquals(
+                "Fat_dut8 调类分布（入声 7 共 12 行）",
+                "7:12",
+                toneProfile("Fat_dut8")
+            )
+            assertEquals(
+                "Fat_dut8 声母须全为送气透母 tʰ",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Fat_dut8' AND initial <> 'tʰ'")
+            )
+            assertEquals(
+                "Fat_dut8 注释须全非空",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Fat_dut8' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Fat_dut8 成员不得与既有组 (lang, ipa) 重叠",
+                0,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates c WHERE c.cognate_group = 'Fat_dut8' AND EXISTS (" +
+                        "SELECT 1 FROM cognates o WHERE o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Fat_dut8')"
+                )
+            )
+            assertEquals(
+                "Fat_dut8 组参数（Fat/肥胖，12 条 12 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Fat_dut8' " +
+                        "AND semantic_tag = 'Fat' AND semantic_label = '肥胖' " +
+                        "AND member_count = 12 AND dialect_count = 12"
+                )
+            )
+            assertEquals(
+                "Fat_dut8 成员 (lang|ipa) 集合（12 条 12 点）",
+                listOf(
+                    "長沙|tʰɵʊ7",
+                    "新長沙|tʰəɯ̽7",
+                    "長沙黎圫|tʰəu7",
+                    "長沙黃花|tʰei7",
+                    "瀏陽官橋|tʰei7",
+                    "瀏陽田坪|tʰei7",
+                    "瀏陽金剛|tʰei7",
+                    "瀏陽鎮頭|tʰei7",
+                    "瀏陽|tʰei7",
+                    "瀏陽大瑶|tʰei7",
+                    "瀏陽永安|tʰei7",
+                    "醴陵石亭|tʰəu7"
+                ).sorted(),
+                members("Fat_dut8").sorted()
+            )
+
+            // 2026-11-13 用户裁决：衡東草市 Hide 的 piaŋ5（id=76）自 Hide_paŋ5 移入带 -i- 介音的 Hide_piaŋ5，
+            // 两组的成员数/点位数随之变为 15/15 与 6/6。
+            assertEquals(15, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hide_paŋ5'"))
+            assertEquals(15, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hide_paŋ5'"))
+            assertEquals(6, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hide_piaŋ5'"))
+            assertEquals(6, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hide_piaŋ5'"))
+            assertEquals(
+                "Hide_piaŋ5 须含 衡東草市 piaŋ5",
+                1,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hide_piaŋ5' AND lang = '衡東草市' AND ipa = 'piaŋ5'")
+            )
+            assertEquals(
+                "id=76 须已移入 Hide_piaŋ5",
+                1,
+                scalar("SELECT COUNT(*) FROM cognates WHERE id = 76 AND cognate_group = 'Hide_piaŋ5'")
+            )
+
+            // 2026-11-13 用户裁决：Cold_kəu5 义项标签由「構/冷」统一为「冷」；成员为既有 manual 条目，
+            // note 允许为空（ADR-0005 不追溯存量），故本组不设注释非空断言。
+            assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_kəu5'"))
+            assertEquals(10, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Cold_kəu5'"))
+            assertEquals(
+                "Cold_kəu5 组参数（Cold/冷，10 条 10 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Cold_kəu5' " +
+                        "AND semantic_tag = 'Cold' AND semantic_label = '冷' " +
+                        "AND member_count = 10 AND dialect_count = 10"
+                )
             )
 
             assertEquals(
