@@ -186,7 +186,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：组数、条数、本版新增的 32 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：组数、条数、本版新增的 33 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -202,8 +202,8 @@ class DataLayerTest {
             fun scalar(sql: String, vararg args: String): Int =
                 db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
 
-            assertEquals(2577, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(186, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2587, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(187, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -215,7 +215,8 @@ class DataLayerTest {
                 "Shout_wiak8", "Shout_tɕwia5", "Shout_ŋɔŋ1", "Shout_bau2",
                 "Shout_ɣau2", "Shout_o5", "Shout_uai7", "Shout_si1",
                 "Poking_ŋen3", "Poking_am5",
-                "Suck_tswin1", "Suck_tsʰwien3"
+                "Suck_tswin1", "Suck_tsʰwien3",
+                "Greedy_soŋ2"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
@@ -294,6 +295,42 @@ class DataLayerTest {
                 assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", oldName))
                 assertEquals(0, scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = ?", oldName))
             }
+
+            // 用户裁决 m01425：新建 Greedy_soŋ2（嘴饞/貪吃）10 条，s + 通摄阳平。
+            assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Greedy_soŋ2'"))
+            assertEquals(10, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Greedy_soŋ2'"))
+            assertEquals(
+                "Greedy_soŋ2 声母须全为 s",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Greedy_soŋ2' AND initial <> 's'")
+            )
+            assertEquals(
+                "Greedy_soŋ2 调类须全为阳平 2",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Greedy_soŋ2' AND tone_cat <> '2'")
+            )
+            assertEquals(
+                "Greedy_soŋ2 注释须全非空",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Greedy_soŋ2' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Greedy_soŋ2 成员不得与既有组 (lang, ipa) 重叠",
+                0,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates c WHERE c.cognate_group = 'Greedy_soŋ2' AND EXISTS (" +
+                        "SELECT 1 FROM cognates o WHERE o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Greedy_soŋ2')"
+                )
+            )
+            assertEquals(
+                "Greedy_soŋ2 组参数（Greedy/嘴饞/貪吃，10 条 10 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Greedy_soŋ2' " +
+                        "AND semantic_tag = 'Greedy' AND semantic_label = '嘴饞/貪吃' " +
+                        "AND member_count = 10 AND dialect_count = 10"
+                )
+            )
 
             assertEquals(
                 "两腿分開只收调类 3/6",
