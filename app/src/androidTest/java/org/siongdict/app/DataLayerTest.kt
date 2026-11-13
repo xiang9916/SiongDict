@@ -225,7 +225,7 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            assertEquals(2634, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(2657, scalar("SELECT COUNT(*) FROM cognates"))
             assertEquals(192, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
@@ -243,9 +243,7 @@ class DataLayerTest {
                 "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tæ3", "Fat_dut8"
             )
             for (g in added) {
-                // Hit_tæ3 是本版唯一的单点单条组（桑植芙蓉橋 tæ3），其余新增组均至少 2 条。
-                val minMembers = if (g == "Hit_tæ3") 1 else 2
-                assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= minMembers)
+                assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
             }
 
             // 2026-11-10 用户裁决：8 组音类标签改名，成员与条数不变，旧名不得残留。
@@ -358,13 +356,16 @@ class DataLayerTest {
                 )
             )
 
-            // 2026-11-13 用户裁决：新建 Cold 两组（冷）与 Hit 两组（打），共 35 条；
+            // 2026-11-13 用户裁决：新建 Cold 两组（冷）与 Hit 两组（打）；写库后按用户裁决纠偏：
+            // Cold_laŋ4 删除 12 条文读层读音，只留梗摄二等白读（11 条 9 点）；Cold_liaŋ4 增补长沙系 4 条（9 条 8 点）；
+            // Hit_tiaŋ5 删除益陽 tʰiɔ̃1 / 醴陵石亭 pʰiaŋ3，补江永桃川 liɛ3 / 湘陰界頭鋪 tiã5（6 条 6 点）；
+            // Hit_tæ3 扩为 31 个新增点（独立韵 a/æ/ɑ/ᴀ，32 条 32 点）。
             // 组名末位数字是音类标签，不代表成员 tone_cat。Cold_laŋ4 收梗摄二等白读（來母 l/n 自由变体）。
-            assertEquals(23, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_laŋ4'"))
-            assertEquals(17, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Cold_laŋ4'"))
+            assertEquals(11, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_laŋ4'"))
+            assertEquals(9, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Cold_laŋ4'"))
             assertEquals(
-                "Cold_laŋ4 调类分布（4 个调类共 23 行）",
-                "1:1,3:17,4:1,5:4",
+                "Cold_laŋ4 调类分布（1/3/4/5 四调共 11 行）",
+                "1:1,3:8,4:1,5:1",
                 toneProfile("Cold_laŋ4")
             )
             assertEquals(
@@ -383,6 +384,11 @@ class DataLayerTest {
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_laŋ4' AND (note IS NULL OR TRIM(note) = '')")
             )
             assertEquals(
+                "Cold_laŋ4 已删的 12 条文读层 id 不得残留",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE id IN (2589,2590,2593,2596,2597,2599,2600,2601,2603,2606,2607,2611)")
+            )
+            assertEquals(
                 "Cold_laŋ4 成员不得与既有组 (lang, ipa) 重叠",
                 0,
                 scalar(
@@ -391,56 +397,44 @@ class DataLayerTest {
                 )
             )
             assertEquals(
-                "Cold_laŋ4 组参数（Cold/冷，23 条 17 点）",
+                "Cold_laŋ4 组参数（Cold/冷，11 条 9 点）",
                 1,
                 scalar(
                     "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Cold_laŋ4' " +
                         "AND semantic_tag = 'Cold' AND semantic_label = '冷' " +
-                        "AND member_count = 23 AND dialect_count = 17"
+                        "AND member_count = 11 AND dialect_count = 9"
                 )
             )
             assertEquals(
-                "Cold_laŋ4 成员 (lang|ipa) 集合（23 条 17 点）",
+                "Cold_laŋ4 成员 (lang|ipa) 集合（11 条 9 点）",
                 listOf(
-                    "上尹官話|lən5",
-                    "嘉禾普滿|lə̃ŋ3",
                     "安福瓜畲|lãŋ3",
                     "安福瓜畲|lãŋ4",
-                    "岳陽路口|nən3",
                     "攸縣新市|laŋ1",
                     "攸縣新市|laŋ5",
-                    "攸縣皇圖嶺|lɛi3",
-                    "東源官話|lən5",
                     "桂陽六合|lɔ̃3",
-                    "湘潭花石|lən3",
-                    "湘陰界頭鋪|lən3",
-                    "石泉中池|lən3",
                     "石泉中池|nuɑ̃3",
-                    "耒陽|lẽ3",
                     "耒陽|lɔ̃3",
                     "臨桂陶善|no3",
-                    "臨桂陶善|nən3",
-                    "道縣|lən5",
                     "銅仁漾頭|nɔ̃3",
                     "靈川三街|la3",
                     "鳳凰|laŋ3",
-                    "鳳凰|lən3"
                 ).sorted(),
                 members("Cold_laŋ4").sorted()
             )
 
-            // Cold_liaŋ4 收梗摄四等带 -i- 介音；臨武鎮南 liɑŋ3/liɑŋ4 同点两条，故 5 条 4 点（DISTINCT lang=4）。
-            assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4'"))
-            assertEquals(4, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Cold_liaŋ4'"))
+            // Cold_liaŋ4 收梗摄四等带 -i- 介音；臨武鎮南 liɑŋ3/liɑŋ4 同点两条，故 9 条 8 点（DISTINCT lang=8）。
+            assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4'"))
+            assertEquals(8, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Cold_liaŋ4'"))
             assertEquals(
-                "Cold_liaŋ4 调类分布（3/4 两调共 5 行）",
-                "3:3,4:2",
+                "Cold_liaŋ4 调类分布（3/4 两调共 9 行）",
+                "3:5,4:4",
                 toneProfile("Cold_liaŋ4")
             )
             assertEquals(
-                "Cold_liaŋ4 声母须全为來母 l",
+                "Cold_liaŋ4 声母须为來母 l/n（韶山 niæ̃3 为 n-）",
                 0,
-                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4' AND initial <> 'l'")
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4' AND initial NOT IN ('l','n')")
             )
             assertEquals(
                 "Cold_liaŋ4 梗四白读须带 -i- 介音",
@@ -448,9 +442,14 @@ class DataLayerTest {
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4' AND final NOT LIKE 'i%'")
             )
             assertEquals(
-                "Cold_liaŋ4 注释须全非空",
-                0,
+                "Cold_liaŋ4 空注释恰 1 条（韶山 niæ̃3）",
+                1,
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Cold_liaŋ4 文读层不得混入（无 lən 行）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4' AND initial = 'l' AND final IN ('ən','ə̃ŋ')")
             )
             assertEquals(
                 "Cold_liaŋ4 成员不得与既有组 (lang, ipa) 重叠",
@@ -461,38 +460,50 @@ class DataLayerTest {
                 )
             )
             assertEquals(
-                "Cold_liaŋ4 组参数（Cold/冷，5 条 4 点）",
+                "Cold_liaŋ4 新增长沙系 4 条须在组内",
+                4,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cold_liaŋ4' AND (lang || '|' || ipa) IN " +
+                        "('長沙雙江|liɒŋ4','長沙金井|liaŋ4','湘音檢字|lian3','韶山|niæ̃3')"
+                )
+            )
+            assertEquals(
+                "Cold_liaŋ4 组参数（Cold/冷，9 条 8 点）",
                 1,
                 scalar(
                     "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Cold_liaŋ4' " +
                         "AND semantic_tag = 'Cold' AND semantic_label = '冷' " +
-                        "AND member_count = 5 AND dialect_count = 4"
+                        "AND member_count = 9 AND dialect_count = 8"
                 )
             )
             assertEquals(
-                "Cold_liaŋ4 成员 (lang|ipa) 集合（5 条 4 点）",
+                "Cold_liaŋ4 成员 (lang|ipa) 集合（9 条 8 点）",
                 listOf(
                     "冷水江鐸山|liᴀ̃3",
                     "江永夏層舖|lioŋ4",
+                    "湘音檢字|lian3",
                     "臨武鎮南|liɑŋ3",
                     "臨武鎮南|liɑŋ4",
-                    "達縣安仁|liaŋ3"
+                    "達縣安仁|liaŋ3",
+                    "長沙金井|liaŋ4",
+                    "長沙雙江|liɒŋ4",
+                    "韶山|niæ̃3",
                 ).sorted(),
                 members("Cold_liaŋ4").sorted()
             )
 
-            // Hit_tiaŋ5 收梗摄四等白读（带 -i- 介音，参考调类 5）；Hit_tæ3 收非麻韵独立韵，单点单条。
+            // Hit_tiaŋ5 收梗摄四等白读（带 -i- 介音，参考调类 5）；纠偏后 6 条 6 点，声母限 t/l。
             assertEquals(6, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5'"))
             assertEquals(6, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5'"))
             assertEquals(
-                "Hit_tiaŋ5 调类分布（1/3/5 三调共 6 行）",
-                "1:1,3:1,5:4",
+                "Hit_tiaŋ5 调类分布（3/5 两调共 6 行）",
+                "3:1,5:5",
                 toneProfile("Hit_tiaŋ5")
             )
             assertEquals(
-                "Hit_tiaŋ5 声母限 t/tʰ/pʰ",
+                "Hit_tiaŋ5 声母限 t/l（江永桃川 liɛ3 为 l-）",
                 0,
-                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5' AND initial NOT IN ('t','tʰ','pʰ')")
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5' AND initial NOT IN ('t','l')")
             )
             assertEquals(
                 "Hit_tiaŋ5 梗四白读须带 -i- 介音",
@@ -503,6 +514,19 @@ class DataLayerTest {
                 "Hit_tiaŋ5 注释须全非空",
                 0,
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Hit_tiaŋ5 已删的益陽/醴陵石亭两条不得残留",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE (lang = '益陽' AND ipa = 'tʰiɔ̃1') OR (lang = '醴陵石亭' AND ipa = 'pʰiaŋ3')")
+            )
+            assertEquals(
+                "Hit_tiaŋ5 新增江永桃川/湘陰界頭鋪两条须在组内",
+                2,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5' AND (lang || '|' || ipa) IN " +
+                        "('江永桃川|liɛ3','湘陰界頭鋪|tiã5')"
+                )
             )
             assertEquals(
                 "Hit_tiaŋ5 成员不得与既有组 (lang, ipa) 重叠",
@@ -526,29 +550,55 @@ class DataLayerTest {
                 listOf(
                     "冷水江鐸山|tiᴀ̃5a",
                     "新長沙|tiæ̃5",
+                    "江永桃川|liɛ3",
                     "湘潭易俗河|tiã5",
-                    "益陽|tʰiɔ̃1",
-                    "醴陵石亭|pʰiaŋ3",
-                    "長沙|tiã5"
+                    "湘陰界頭鋪|tiã5",
+                    "長沙|tiã5",
                 ).sorted(),
                 members("Hit_tiaŋ5").sorted()
             )
-            assertEquals(1, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3'"))
-            assertEquals(1, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_tæ3'"))
+
+            // Hit_tæ3 收非麻韵独立韵（a/æ/ɑ/ᴀ）：纠偏后 32 条 32 点；31 个新增点无注，属 ADR-0005 登记例外，
+            // 仅桑植芙蓉橋 tæ3 保留原注「~架」。
+            assertEquals(32, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3'"))
+            assertEquals(32, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_tæ3'"))
+            assertEquals(
+                "Hit_tæ3 调类分布（上声 3 共 32 行）",
+                "3:32",
+                toneProfile("Hit_tæ3")
+            )
             assertEquals(
                 "Hit_tæ3 调类限上声 3",
                 0,
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3' AND tone_cat <> '3'")
             )
             assertEquals(
-                "Hit_tæ3 声母须为 t、韵母须为独立韵 æ",
+                "Hit_tæ3 声母须全为 t",
                 0,
-                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3' AND (initial <> 't' OR final <> 'æ')")
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3' AND initial <> 't'")
             )
             assertEquals(
-                "Hit_tæ3 注释须全非空",
+                "Hit_tæ3 独立韵应有 a/æ/ɑ/ᴀ 4 种",
+                4,
+                scalar("SELECT COUNT(DISTINCT final) FROM cognates WHERE cognate_group = 'Hit_tæ3'")
+            )
+            assertEquals(
+                "Hit_tæ3 韵母限 a/æ/ɑ/ᴀ",
                 0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3' AND final NOT IN ('a','æ','ɑ','ᴀ')")
+            )
+            assertEquals(
+                "Hit_tæ3 空注释恰 31 条（仅桑植芙蓉橋 tæ3 有注）",
+                31,
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Hit_tæ3 有注的只应是桑植芙蓉橋 tæ3",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tæ3' AND lang = '桑植芙蓉橋' " +
+                        "AND ipa = 'tæ3' AND note IS NOT NULL AND TRIM(note) <> ''"
+                )
             )
             assertEquals(
                 "Hit_tæ3 成员不得与既有组 (lang, ipa) 重叠",
@@ -559,18 +609,49 @@ class DataLayerTest {
                 )
             )
             assertEquals(
-                "Hit_tæ3 组参数（Hit/打，1 条 1 点）",
+                "Hit_tæ3 组参数（Hit/打，32 条 32 点）",
                 1,
                 scalar(
                     "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Hit_tæ3' " +
                         "AND semantic_tag = 'Hit' AND semantic_label = '打' " +
-                        "AND member_count = 1 AND dialect_count = 1"
+                        "AND member_count = 32 AND dialect_count = 32"
                 )
             )
             assertEquals(
-                "Hit_tæ3 成员 (lang|ipa) 集合（1 条 1 点）",
+                "Hit_tæ3 成员 (lang|ipa) 集合（32 条 32 点）",
                 listOf(
-                    "桑植芙蓉橋|tæ3"
+                    "古丈死客子話|ta3",
+                    "婁底|ta3",
+                    "婁底石井|ta3",
+                    "婁底萬寶|ta3",
+                    "安化高明|ta3",
+                    "寧遠張家|ta3",
+                    "寧鄉大成橋|ta3",
+                    "寧鄉花明樓|ta3",
+                    "寧鄉黃材|ta3",
+                    "新邵坪上|ta3",
+                    "桂陽歐陽海|ta3",
+                    "桑植芙蓉橋|tæ3",
+                    "永州杉木橋|ta3",
+                    "永興馬田|tᴀ3",
+                    "沅陵仰溪鋪|ta3",
+                    "湘鄉|ta3",
+                    "湘鄉棋梓|ta3",
+                    "漣源|ta3",
+                    "漣源橋頭河|tɑ3",
+                    "漵浦|tɑ3",
+                    "瀘溪武溪|ta3",
+                    "石泉中池|tᴀ3",
+                    "辰谿|ta3",
+                    "達縣安仁|ta3",
+                    "達縣新勝|ta3",
+                    "邵東斫曹|ta3",
+                    "雙峰|ta3",
+                    "雙峰三塘鋪|ta3",
+                    "雙峰甘棠|ta3",
+                    "雙峰花門|ta3",
+                    "韶山|ta3",
+                    "韶山大坪|ta3",
                 ).sorted(),
                 members("Hit_tæ3").sorted()
             )
