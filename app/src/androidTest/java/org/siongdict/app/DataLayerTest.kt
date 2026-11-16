@@ -226,7 +226,7 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            assertEquals(2686, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(2690, scalar("SELECT COUNT(*) FROM cognates"))
             assertEquals(196, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
@@ -744,9 +744,26 @@ class DataLayerTest {
                 )
             )
 
-            // 2026-11-16 用户裁决：GetWetInTheRain 音类标签由 dʐai6 统一为 dʒai6，成员与条数不变。
-            assertEquals(67, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6'"))
-            assertEquals(66, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6'"))
+            // 2026-11-16 用户裁决：GetWetInTheRain 音类标签由 dʐai6 统一为 dʒai6；其后新增
+            // 萍鄉 tsʰai5、蘆溪 tsʰai2 两条（蘆溪调类并入阳平，tone_cat='2'），现 69 条 68 点。
+            assertEquals(69, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6'"))
+            assertEquals(68, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6'"))
+            assertEquals(
+                "GetWetInTheRain_dʒai6 须含萍鄉 tsʰai5、蘆溪 tsʰai2 两条",
+                2,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6' " +
+                        "AND ((lang = '萍鄉' AND ipa = 'tsʰai5') OR (lang = '蘆溪' AND ipa = 'tsʰai2'))"
+                )
+            )
+            assertEquals(
+                "蘆溪 tsʰai2 调类须并入阳平（tone_cat=2）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6' " +
+                        "AND lang = '蘆溪' AND ipa = 'tsʰai2' AND tone_cat = '2'"
+                )
+            )
             assertEquals(
                 "旧组名 GetWetInTheRain_dʐai6 不得残留",
                 0,
@@ -784,22 +801,25 @@ class DataLayerTest {
             assertEquals(3, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Rub_tɕʰiau3'"))
             assertEquals(3, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Rub_tɕʰiau3'"))
 
-            // Curse 两组：Curse_fan3 9 条 9 点；Curse_ʃwien3 3 条 3 点（瀏陽系 ʂ/s 自由变体）。
+            // Curse 两组：Curse_fan3 9 条 9 点；Curse_ʃwien3 5 条 5 点
+            // （2026-11-16 新增上栗 sɵn3、萍鄉 fɛ̃3；瀏陽系 ʂ/s 與萍鄉 f 跨音類人工分組）。
             assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_fan3'"))
             assertEquals(9, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_fan3'"))
-            assertEquals(3, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
-            assertEquals(3, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
+            assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
+            assertEquals(5, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
             assertEquals(
-                "Curse_ʃwien3 声母须为 ʂ/s 自由变体",
+                "Curse_ʃwien3 声母须为 ʂ/s/f（含跨音类 f）",
                 0,
-                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3' AND initial NOT IN ('ʂ','s')")
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3' AND initial NOT IN ('ʂ','s','f')")
             )
             assertEquals(
-                "Curse_ʃwien3 成员 (lang|ipa) 集合（瀏陽系 3 点，NFD 原串）",
+                "Curse_ʃwien3 成员 (lang|ipa) 集合（5 点，NFD 原串）",
                 listOf(
                     "瀏陽|ʂø̃ỹ3",
                     "瀏陽金剛|sø̃ỹ3",
-                    "瀏陽大瑶|sø̃ỹ3"
+                    "瀏陽大瑶|sø̃ỹ3",
+                    "上栗|sɵn3",
+                    "萍鄉|fɛ̃3"
                 ).sorted(),
                 members("Curse_ʃwien3").sorted()
             )
