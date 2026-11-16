@@ -802,13 +802,13 @@ class DataLayerTest {
             assertEquals(3, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Rub_tɕʰiau3'"))
 
             // Curse 两组：Curse_fan3 9 条 9 点；Curse_ʃwien3 5 条 5 点
-            // （2026-11-16 新增上栗 sɵn3、萍鄉 fɛ̃3；瀏陽系 ʂ/s 與萍鄉 f 跨音類人工分組）。
+            // （2026-11-16 新增上栗 sɵn3、萍鄉 fɛ̃3；二者分别与同点「說」入声 sɵ7／fɛ1 阳入对转（-t→-n），非跨音类分组）。
             assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_fan3'"))
             assertEquals(9, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_fan3'"))
             assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
             assertEquals(5, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
             assertEquals(
-                "Curse_ʃwien3 声母须为 ʂ/s/f（含跨音类 f）",
+                "Curse_ʃwien3 声母须为 ʂ/s/f（f- 属萍鄉「說」的阳入对转层次）",
                 0,
                 scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3' AND initial NOT IN ('ʂ','s','f')")
             )

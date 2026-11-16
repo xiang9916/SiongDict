@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 开发须知
 
-> 给在此仓库工作的 AI／开发者。**2026-11-09 汇总**，代码对应 `0.4-rc.14`。
+> 给在此仓库工作的 AI／开发者。**2026-11-16 汇总**，代码对应 `0.5-alpha.1`。
 >
 > ⚠️ **本文件在仓库内、会随仓库一起公开** —— 所以这里只写可公开的事实：不含建置机绝对路径（`/Users/<使用者名>/…`）、
 > 不含任何签名凭证或其口令、不含未公开的个人资料。动代码、资料或发版之前先读一遍。
@@ -9,7 +9,7 @@
 
 - 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索，无需联网。
 - 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
-- 当前版本 **0.4-rc.14**：`versionCode 48`、`versionName "0.4-rc.14"`，只存在于 `app/build.gradle`。
+- 当前版本 **0.5-alpha.1**：`versionCode 49`、`versionName "0.5-alpha.1"`，只存在于 `app/build.gradle`。
 - 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
 - 资料规模：**491 个方言点**、**609,323 条读音**、124,577 组同音字；同源词 **196 组 / 2,690 条**（全数人工标注，无自动条目）。
 - git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
@@ -213,8 +213,9 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4-rc.12 | 46 |
 | 0.4-rc.13 | 47 |
 | 0.4-rc.14 | 48 |
+| 0.5-alpha.1 | 49 |
 
-`versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。
+`versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。0.4-rc.14 之后进入 `0.5-alpha.N` 系列，首版为 `0.5-alpha.1` / code 49。
 
 **版本号是唯一把新资料推给既有使用者的机制。** `isOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DatabaseMaintenance.isOutdated()`，实现是 `DatabaseFiles.isOutdated()`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
 
