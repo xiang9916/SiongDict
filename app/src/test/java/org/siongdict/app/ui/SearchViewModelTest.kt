@@ -125,11 +125,46 @@ class SearchViewModelTest {
         advanceUntilIdle()
 
         vm.updateQuery("湘")
-        vm.updateFilters(DialectFilters(xiangGan = false))
+        vm.updateFilters(DialectFilters(selected = setOf("湘南")))
         vm.search()
         advanceUntilIdle()
 
         assertEquals(listOf("乙"), vm.uiState.value.results.flatMap { it.entries }.map { it.lang })
+    }
+
+    @Test
+    fun filterChangeRerunsSearchAndLoadsDialectTree() = runTest(dispatcher) {
+        lexicon.onSearchByChar = { hz -> listOf(result(hz, "甲", "a1"), result(hz, "乙", "b1")) }
+        lexicon.onDialectDivision = { lang -> if (lang == "甲") "湘贛－岳州" else "湘南" }
+        lexicon.onDialectDivisions = { linkedMapOf("甲" to "湘贛－岳州", "乙" to "湘南") }
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        // 数据层就绪后异步载入分区树
+        val tree = vm.uiState.value.dialectTree
+        assertEquals(listOf("湘贛", "湘南"), tree.map { it.name })
+        assertEquals(1, tree.first().children.single().pointCount)
+        assertEquals(1, tree[1].pointCount)
+        assertEquals(1, lexicon.divisionLoads)
+
+        vm.updateQuery("湘")
+        vm.search()
+        advanceUntilIdle()
+        assertEquals(2, vm.uiState.value.results.single().entries.size)
+        val callsBefore = lexicon.charQueries.count { it == "湘" }
+
+        vm.updateFilters(DialectFilters(selected = setOf("湘南")))
+        advanceUntilIdle()
+
+        assertEquals(
+            "改筛选后应只保留湘南",
+            listOf("乙"),
+            vm.uiState.value.results.flatMap { it.entries }.map { it.lang }
+        )
+        assertTrue(
+            "改筛选后应自动重跑检索",
+            lexicon.charQueries.count { it == "湘" } > callsBefore
+        )
     }
 
     @Test

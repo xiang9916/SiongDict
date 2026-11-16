@@ -24,6 +24,9 @@ interface Lexicon {
 
     /** 方言点的音典分区（如「湘贛－岳州」）；没有数据时空串。 */
     suspend fun dialectDivision(lang: String): String
+
+    /** 全部方言点的音典分区（簡稱 → 分區）；空白分区不進 map。 */
+    suspend fun dialectDivisions(): Map<String, String>
 }
 
 internal class LocalLexicon(
@@ -81,10 +84,20 @@ internal class LocalLexicon(
 
     override suspend fun dialectDivision(lang: String): String = gate.run {
         ensureGeneration()
-        val cache = divisions ?: loadInfoColumn("音典分區") { it.ifEmpty { null } }
-            .also { divisions = it }
-        cache[lang] ?: ""
+        divisionCache()[lang] ?: ""
     }
+
+    override suspend fun dialectDivisions(): Map<String, String> = gate.run {
+        ensureGeneration()
+        divisionCache()
+    }
+
+    /** 音典分区缓存（簡稱 → 分區）；空分区不入 map。 */
+    private fun divisionCache(): Map<String, String> =
+        divisions ?: loadInfoColumn("音典分區") { it.ifEmpty { null } }.also {
+            divisions = it
+            Log.i(TAG, "Loaded divisions for ${it.size} dialects")
+        }
 
     private fun ensureGeneration() {
         if (cacheGeneration == files.generation) return

@@ -23,13 +23,14 @@ import org.siongdict.app.data.SearchResult
 import org.siongdict.app.data.ToneFormatter
 import java.util.concurrent.atomic.AtomicInteger
 
-/** 三类方言分区筛选项。全部开启时（[anyHidden] 为 false）可以整段跳过过滤。 */
-data class DialectFilters(
-    val xiangGan: Boolean = true,
-    val zhongShangJiang: Boolean = true,
-    val xiangHuaTuHua: Boolean = true
-) {
-    val anyHidden: Boolean get() = !xiangGan || !zhongShangJiang || !xiangHuaTuHua
+/**
+ * 方言筛选：叶子分区路径集合。
+ *
+ * [selected] 为 null 表示不筛选（全部显示），此时 [anyHidden] 为 false，过滤可整段跳过；
+ * 非 null 时只显示该集合命中的叶子分区（见 [leafKey]）。
+ */
+data class DialectFilters(val selected: Set<String>? = null) {
+    val anyHidden: Boolean get() = selected != null
 }
 
 data class SearchUiState(
@@ -40,6 +41,8 @@ data class SearchUiState(
     val searched: Boolean = false,
     val error: String? = null,
     val filters: DialectFilters = DialectFilters(),
+    /** 方言分区树（由数据层异步载入；空表示暂缺）。 */
+    val dialectTree: List<DialectNode> = emptyList(),
     val dbOutdated: Boolean = false,
     val appVersion: String = ""
 )
@@ -82,6 +85,7 @@ class SearchViewModel(
                 // 首装/升级后的 54 MB 复制在数据层的 IO 线程上做，不占主线程
                 maintenance.prepare()
             }
+            loadDialectTree()
         }
     }
 
@@ -89,7 +93,12 @@ class SearchViewModel(
 
     fun updateMode(mode: SearchMode) = _uiState.update { it.copy(mode = mode, error = null) }
 
-    fun updateFilters(filters: DialectFilters) = _uiState.update { it.copy(filters = filters) }
+    /** 更新筛选；已经搜过且查询非空时立即用新条件重跑，保证界面与筛选一致。 */
+    fun updateFilters(filters: DialectFilters) {
+        _uiState.update { it.copy(filters = filters) }
+        val state = _uiState.value
+        if (state.searched && state.query.isNotBlank()) search()
+    }
 
     fun search() {
         val state = _uiState.value
@@ -143,7 +152,19 @@ class SearchViewModel(
                     dbOutdated = false
                 )
             }
+            loadDialectTree() // 重置后 generation 变化，分区树需重新载入
         }
+    }
+
+    /**
+     * 载入全部方言点的音典分区并构建筛选树。数据层重置后 generation 变化，需要重新载入；
+     * 失败时保留空树（界面显示「暫無分區資料」），不影响检索本身。
+     */
+    private suspend fun loadDialectTree() {
+        val tree = runCatching {
+            withContext(computeDispatcher) { buildDialectTree(lexicon.dialectDivisions()) }
+        }.onFailure { Log.e(TAG, "Failed to load dialect tree", it) }.getOrDefault(emptyList())
+        _uiState.update { it.copy(dialectTree = tree) }
     }
 
     // ─── 三种检索模式 ───
@@ -237,16 +258,9 @@ class SearchViewModel(
         }
     }
 
-    /** Filter raw search results by dialect division category. */
+    /** 方言点是否可见：未筛选恒可见；否则按分区叶子键（[leafKey]）匹配。 */
     private suspend fun isDialectVisible(lang: String, filters: DialectFilters): Boolean {
-        val div = lexicon.dialectDivision(lang)
-        return when {
-            div.startsWith("湘贛") -> filters.xiangGan
-            div.startsWith("中上江") || div.startsWith("藍青") -> filters.zhongShangJiang
-            div.startsWith("湘南") || div == "道州" || div == "鄉話" -> filters.xiangHuaTuHua
-            div.startsWith("嶺東") || div.startsWith("嶺南") || div.startsWith("閩") -> filters.xiangHuaTuHua
-            div == "戲劇" -> filters.xiangGan || filters.zhongShangJiang
-            else -> true
-        }
+        val selected = filters.selected ?: return true
+        return leafKey(lexicon.dialectDivision(lang)) in selected
     }
 }

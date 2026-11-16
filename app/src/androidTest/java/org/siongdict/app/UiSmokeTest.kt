@@ -17,7 +17,7 @@ import org.junit.runner.RunWith
 
 /**
  * 界面回归测试（真机/模拟器）：首帧渲染（含内联图标与只读库打开）、
- * **重复字检索不再因重复 key 崩溃**、三种模式、方言筛选菜单、关于面板。
+ * **重复字检索不再因重复 key 崩溃**、三种模式、方言筛选对话框、关于面板。
  */
 @RunWith(AndroidJUnit4::class)
 class UiSmokeTest {
@@ -67,13 +67,26 @@ class UiSmokeTest {
     }
 
     @Test
-    fun dialectFilterMenuOpens() {
+    fun dialectFilterDialogOpensAndClearsSelection() {
+        // 右上筛选图示打开分区树对话框：顶层分区 湘贛 及其子级 岳州 均应列出。
         compose.onNodeWithContentDescription("方言篩選").performClick()
+        compose.onNodeWithText("方言篩選").assertExists()
         compose.onNodeWithText("湘贛").assertExists()
-        compose.onNodeWithText("中上江和藍青").assertExists()
-        compose.onNodeWithText("鄉話和土話").assertExists()
-        // 整行可点（本次修复）：点文字行不应抛异常
-        compose.onNodeWithText("湘贛").performClick()
+        compose.onNodeWithText("岳州").assertExists()
+        compose.onNodeWithText("全不選").assertExists()
+        // 点「全不選」清空全部叶子选中状态，关闭后再检索：结果为空但不得崩。
+        compose.onNodeWithText("全不選").performClick()
+        compose.onNodeWithText("關閉").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("湘")
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithText("無結果").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue(
+            "全不選后检索应渲染空结果且不崩",
+            compose.onAllNodesWithText("無結果").fetchSemanticsNodes().isNotEmpty()
+        )
+        compose.onNodeWithText("湘典", substring = true).assertExists()
     }
 
     @Test

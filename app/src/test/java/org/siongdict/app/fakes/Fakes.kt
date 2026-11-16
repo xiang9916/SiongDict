@@ -17,8 +17,10 @@ class FakeLexicon : Lexicon {
     var onVariantsOf: (String) -> List<String> = { listOf(it) }
     var onToneSystem: (String) -> ToneSystem? = { null }
     var onDialectDivision: (String) -> String = { "" }
+    var onDialectDivisions: () -> Map<String, String> = { emptyMap() }
 
     val charQueries = mutableListOf<String>()
+    var divisionLoads = 0
 
     override suspend fun searchByChar(hz: String): List<SearchResult> {
         charQueries += hz
@@ -32,6 +34,11 @@ class FakeLexicon : Lexicon {
     override suspend fun toneSystem(lang: String): ToneSystem? = onToneSystem(lang)
 
     override suspend fun dialectDivision(lang: String): String = onDialectDivision(lang)
+
+    override suspend fun dialectDivisions(): Map<String, String> {
+        divisionLoads++
+        return onDialectDivisions()
+    }
 }
 
 class FakeCognateBook : CognateBook {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,10 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -35,8 +34,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,7 +66,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showInfoDialog by remember { mutableStateOf(false) }
-    var showFilterMenu by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -74,19 +76,13 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
                 },
                 actions = {
-                    IconButton(onClick = { showFilterMenu = true }) {
+                    IconButton(onClick = { showFilterDialog = true }) {
                         Icon(
                             SiongIcons.Visibility,
                             contentDescription = "方言篩選",
                             tint = Color.White
                         )
                     }
-                    DialectFilterMenu(
-                        expanded = showFilterMenu,
-                        filters = uiState.filters,
-                        onDismiss = { showFilterMenu = false },
-                        onFiltersChange = viewModel::updateFilters
-                    )
                     IconButton(onClick = { showInfoDialog = true }) {
                         Icon(
                             Icons.Default.Info,
@@ -121,6 +117,15 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 onJumpTo = { index -> scope.launch { listState.animateScrollToItem(index) } }
             )
         }
+    }
+
+    if (showFilterDialog) {
+        DialectFilterDialog(
+            tree = uiState.dialectTree,
+            filters = uiState.filters,
+            onDismiss = { showFilterDialog = false },
+            onFiltersChange = viewModel::updateFilters
+        )
     }
 
     if (showInfoDialog) {
@@ -293,41 +298,98 @@ private fun CenteredBox(content: @Composable () -> Unit) {
 private fun resultKey(index: Int, group: CharGroup) =
     "${index}:${group.chars}_${group.subtitle}"
 
-/** 方言筛选下拉菜单。 */
+/**
+ * 方言筛选对话框：摊平整棵分区树，全部展开、不可折叠。
+ *
+ * 每行列出一个节点（缩进体现层级），整行点击切换该节点下的全部叶子；
+ * 父节点显示子树三态。变更即时套用到检索（[DialectFilters]），不需要关对话框。
+ */
 @Composable
-private fun DialectFilterMenu(
-    expanded: Boolean,
+private fun DialectFilterDialog(
+    tree: List<DialectNode>,
     filters: DialectFilters,
     onDismiss: () -> Unit,
     onFiltersChange: (DialectFilters) -> Unit
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        FilterCheckboxItem("湘贛", filters.xiangGan) {
-            onFiltersChange(filters.copy(xiangGan = it))
-        }
-        FilterCheckboxItem("中上江和藍青", filters.zhongShangJiang) {
-            onFiltersChange(filters.copy(zhongShangJiang = it))
-        }
-        FilterCheckboxItem("鄉話和土話", filters.xiangHuaTuHua) {
-            onFiltersChange(filters.copy(xiangHuaTuHua = it))
-        }
-    }
-}
-
-/** One checkbox row inside the dialect-filter dropdown. 整行都可点，不只是那个小方框。 */
-@Composable
-private fun FilterCheckboxItem(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    DropdownMenuItem(
+    val rows = remember(tree) { flattenDialectTree(tree) }
+    val allLeaves = remember(tree) { allLeafPaths(tree) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(disp("方言篩選"), fontWeight = FontWeight.Bold) },
         text = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // 勾选状态由整行的 onClick 负责，避免勾选框与行各触发一次
-                Checkbox(checked = checked, onCheckedChange = null)
-                Text(disp(label))
+            if (rows.isEmpty()) {
+                Text(disp("暫無分區資料"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                    itemsIndexed(rows, key = { _, row -> row.first.path }) { _, row ->
+                        val (node, depth) = row
+                        DialectFilterRow(
+                            node = node,
+                            depth = depth,
+                            state = triStateOf(nodeLeafPaths(node), filters.selected),
+                            onToggle = {
+                                onFiltersChange(
+                                    DialectFilters(
+                                        toggleLeaves(filters.selected, nodeLeafPaths(node), allLeaves)
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
             }
         },
-        onClick = { onCheckedChange(!checked) }
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { onFiltersChange(DialectFilters(null)) }) {
+                    Text(disp("全選"))
+                }
+                TextButton(onClick = { onFiltersChange(DialectFilters(emptySet())) }) {
+                    Text(disp("全不選"))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(disp("關閉"))
+                }
+            }
+        }
     )
+}
+
+/** 一组叶子的三态：未筛选（selected == null）视为全选。 */
+private fun triStateOf(leaves: Set<String>, selected: Set<String>?): ToggleableState = when {
+    selected == null -> ToggleableState.On
+    leaves.all { it in selected } -> ToggleableState.On
+    leaves.none { it in selected } -> ToggleableState.Off
+    else -> ToggleableState.Indeterminate
+}
+
+/** 一行方言节点：整行点击切换该节点下的全部叶子；父节点按子树显示三态。 */
+@Composable
+private fun DialectFilterRow(
+    node: DialectNode,
+    depth: Int,
+    state: ToggleableState,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(start = (depth * 16).dp, top = 2.dp, bottom = 2.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // 勾选状态由整行的 onClick 负责，避免勾选框与行各触发一次
+        TriStateCheckbox(state = state, onClick = null)
+        Text(
+            text = disp(node.name),
+            fontWeight = if (depth == 0) FontWeight.Bold else FontWeight.Normal,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = disp("${node.pointCount} 點"),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }

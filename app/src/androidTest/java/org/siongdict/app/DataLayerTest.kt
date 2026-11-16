@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.requery.android.database.sqlite.SQLiteDatabase as RequerySQLiteDatabase
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -186,7 +187,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：组数、条数、本版新增的 38 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：组数、条数、本版新增的 42 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -225,8 +226,8 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            assertEquals(2657, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(192, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(2686, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(196, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -240,7 +241,8 @@ class DataLayerTest {
                 "Poking_ŋen3", "Poking_am5",
                 "Suck_tswin1", "Suck_tsʰwien3",
                 "Greedy_soŋ2",
-                "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tæ3", "Fat_dut8"
+                "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tæ3", "Fat_dut8",
+                "Shield_ʃwin3", "Rub_tɕʰiau3", "Curse_fan3", "Curse_ʃwien3"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
@@ -742,6 +744,69 @@ class DataLayerTest {
                 )
             )
 
+            // 2026-11-16 用户裁决：GetWetInTheRain 音类标签由 dʐai6 统一为 dʒai6，成员与条数不变。
+            assertEquals(67, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6'"))
+            assertEquals(66, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʒai6'"))
+            assertEquals(
+                "旧组名 GetWetInTheRain_dʐai6 不得残留",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'GetWetInTheRain_dʐai6'")
+            )
+
+            // 2026-11-16 用户裁决：新建 Shield_ʃwin3（盾牌）12 条 11 点；其中 5 条注释为空，
+            // 按库存实况断言空注条数，不设全非空断言。
+            assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shield_ʃwin3'"))
+            assertEquals(11, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Shield_ʃwin3'"))
+            assertEquals(
+                "Shield_ʃwin3 空注释恰 5 条",
+                5,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shield_ʃwin3' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Shield_ʃwin3 成员不得与既有组 (lang, ipa) 重叠",
+                0,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates c WHERE c.cognate_group = 'Shield_ʃwin3' AND EXISTS (" +
+                        "SELECT 1 FROM cognates o WHERE o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Shield_ʃwin3')"
+                )
+            )
+            assertEquals(
+                "Shield_ʃwin3 组参数（Shield/盾牌，12 条 11 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Shield_ʃwin3' " +
+                        "AND semantic_tag = 'Shield' AND semantic_label = '盾牌' " +
+                        "AND member_count = 12 AND dialect_count = 11"
+                )
+            )
+
+            // Rub_tɕʰiau3（搓揉）3 条 3 点。
+            assertEquals(3, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Rub_tɕʰiau3'"))
+            assertEquals(3, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Rub_tɕʰiau3'"))
+
+            // Curse 两组：Curse_fan3 9 条 9 点；Curse_ʃwien3 3 条 3 点（瀏陽系 ʂ/s 自由变体）。
+            assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_fan3'"))
+            assertEquals(9, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_fan3'"))
+            assertEquals(3, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
+            assertEquals(3, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Curse_ʃwien3'"))
+            assertEquals(
+                "Curse_ʃwien3 声母须为 ʂ/s 自由变体",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Curse_ʃwien3' AND initial NOT IN ('ʂ','s')")
+            )
+            assertEquals(
+                "Curse_ʃwien3 成员 (lang|ipa) 集合（瀏陽系 3 点，NFD 原串）",
+                listOf(
+                    "瀏陽|ʂø̃ỹ3",
+                    "瀏陽金剛|sø̃ỹ3",
+                    "瀏陽大瑶|sø̃ỹ3"
+                ).sorted(),
+                members("Curse_ʃwien3").sorted()
+            )
+
+            // Shout_ŋɔŋ1（喊）10 条 10 点。
+            assertEquals(10, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Shout_ŋɔŋ1'"))
+
             assertEquals(
                 "两腿分開只收调类 3/6",
                 0,
@@ -766,7 +831,7 @@ class DataLayerTest {
             assertEquals(4, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Burp_ke5'"))
             assertEquals(34, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_wiak8'"))
             assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_tɕwia5'"))
-            assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ŋɔŋ1'"))
+            assertEquals(10, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ŋɔŋ1'"))
             assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_bau2'"))
             assertEquals(7, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_ɣau2'"))
             assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Shout_o5'"))
@@ -776,6 +841,53 @@ class DataLayerTest {
             assertEquals(42, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Poking_ŋen3'"))
             assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Saw_ge4'"))
             assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE lang = '東安橫塘'"))
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * 萍鄉片（贛西袁州）三點載入：重刊 siongdict.db 後 info 491 點、langs 609,323 條、
+     * COUNT(DISTINCT 字組) 124,577；蘆溪／萍鄉／上栗三點音典分區皆「湘贛－贛西－袁州」。
+     */
+    @Test
+    fun pingxiangScopeLoaded() = runBlocking {
+        val d = data()
+        d.maintenance.prepare()
+        // siongdict.db 的 info／langs 是 FTS5 虚拟表，平台 SQLite 没有 fts5 模块，
+        // 必须用与生产代码相同的 requery 自带 SQLite（见 DatabaseFiles.kt）。
+        val db = RequerySQLiteDatabase.openDatabase(
+            ctx.getDatabasePath("siongdict.db").absolutePath,
+            null,
+            RequerySQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            fun scalar(sql: String, vararg args: String): Int =
+                db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
+
+            assertEquals(491, scalar("SELECT COUNT(*) FROM info"))
+            assertEquals(
+                "蘆溪／萍鄉／上栗三點須存在且音典分區為湘贛－贛西－袁州",
+                3,
+                scalar(
+                    "SELECT COUNT(*) FROM info WHERE 簡稱 IN ('蘆溪','萍鄉','上栗') " +
+                        "AND 音典分區 = '湘贛－贛西－袁州'"
+                )
+            )
+            assertEquals(
+                "三點 info 的語言名須與簡稱對應",
+                3,
+                scalar(
+                    "SELECT COUNT(*) FROM info WHERE (簡稱 = '蘆溪' AND 語言 = '蘆溪話') " +
+                        "OR (簡稱 = '萍鄉' AND 語言 = '萍鄉城關話') " +
+                        "OR (簡稱 = '上栗' AND 語言 = '上栗話')"
+                )
+            )
+            assertEquals(609323, scalar("SELECT COUNT(*) FROM langs"))
+            assertEquals(124577, scalar("SELECT COUNT(DISTINCT 字組) FROM langs"))
+            assertEquals(1455, scalar("SELECT COUNT(*) FROM langs WHERE 語言 = '蘆溪'"))
+            assertEquals(1729, scalar("SELECT COUNT(*) FROM langs WHERE 語言 = '萍鄉'"))
+            assertEquals(1635, scalar("SELECT COUNT(*) FROM langs WHERE 語言 = '上栗'"))
         } finally {
             db.close()
         }

@@ -4,6 +4,7 @@
 
 Reads processed TSV files from MCPDict's output directory,
 filters to Xiang-related dialects, and builds a SQLite FTS5 database.
+另收 MCPDict 中地理位置屬江西省萍鄉市的所有點。
 
 Usage:
     python3 build_db.py [--mcpdict-dir PATH] [--output PATH]
@@ -48,9 +49,16 @@ def matches_fq(d):
     return any(kw in yd for kw in YD_KEYWORDS)
 
 
+# 湖南以外另收的地域：(省, 市前綴)
+EXTRA_GEO = (("江西", "萍鄉"),)
+
+
 def matches_geo(d):
     prov = d.get("省", "").strip("*")
-    return prov == "湖南"
+    if prov == "湖南":
+        return True
+    city = d.get("市", "").strip("*")
+    return any(prov == p and city.startswith(c) for p, c in EXTRA_GEO)
 
 
 # ─── Sorting ───

@@ -11,7 +11,7 @@
 - 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
 - 当前版本 **0.4-rc.14**：`versionCode 48`、`versionName "0.4-rc.14"`，只存在于 `app/build.gradle`。
 - 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
-- 资料规模：**488 个方言点**、**604,504 条读音**、123,898 组同音字；同源词 **192 组 / 2,657 条**（全数人工标注，无自动条目）。
+- 资料规模：**491 个方言点**、**609,323 条读音**、124,577 组同音字；同源词 **196 组 / 2,686 条**（全数人工标注，无自动条目）。
 - git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
 - `.git` 约 **9 MB**：2026-10-04 重写过一次历史，把非代码大档全部剔除（见 §7.8）。**该日之前的 clone 已与远端分岔，请重新 clone 后再推送。**
 - 全部读音资料来自 [汉字音典 MCPDict](https://github.com/osfans/MCPDict)。本项目只做三件事：筛选湘语相关方言点、重建检索索引、人工标注同源词。
@@ -57,6 +57,7 @@ app/src/main/java/org/siongdict/app/
   data/Models.kt             资料模型
   data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
   ui/SearchScreen.kt         检索主界面（搜索栏、模式切换、结果列表与右侧跳转条、方言筛选）
+  ui/DialectTree.kt         方言筛选树（音典分区 → 三级节点、纯函数）
   ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
   ui/InfoDialog.kt           「關於」面板（说明页、简体渲染开关、重置資料庫）
   ui/UiText.kt               显示层文本工具（简体渲染、字组标题）
@@ -157,7 +158,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 # 2) 重跑 §4 的四支脚本
 
 # 3) 同步文件数字
-#    README.md 的「488 个方言点、123,898 组同音字、604,504 条读音」
+#    README.md 的「491 个方言点、124,577 组同音字、609,323 条读音」
 #    CHANGELOG.md 新增顶部条目
 #    然后把这两份复制到 app/src/main/assets/（见 §7.2）
 
@@ -175,7 +176,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 - `cognate_group` = `<义项>_<音类>`：`Press_gin4`、`Hide_dzɔŋ2`、`Segment_CutOpen_ʂak7`；
 - `semantic_label` = **繁体中文**标签（前端显示用，如 `鋸`、`彎腰`）；`semantic_tag` = **义项**，即组名去掉末尾那段音类：`Press`、`Hide`、`Segment_CutOpen`。**一个义项下挂多个音类组是正确结构**——`Hide` 挂 8 组、`Press` 4 组、`Attach`/`Curse`/`Fuck` 各 4 组；
-- 驼峰只作用于**纯 A–Z 字母**段；含音标或数字的段原样保留（`DJNbo2_bo2` 这类音类组不动），多词复合义项按语义切词（`GETWETINTHERAIN_dʐai6` → `GetWetInTheRain_dʐai6`）；
+- 驼峰只作用于**纯 A–Z 字母**段；含音标或数字的段原样保留（`DJNbo2_bo2` 这类音类组不动），多词复合义项按语义切词（`GETWETINTHERAIN_dʒai6` → `GetWetInTheRain_dʒai6`）；
 - 组名后缀是**音类标签**，**不保证等于组内某个成员的今读**：`Press_gin4`/`gin4`/`ɣan6`/`dzen4` 用的是中古音类名，`Curse_tʂʰak8`（成员今读是 tsʰu1/tsʰo1/tsʰa6…）、`Segment_CutOpen_ʂak7`（成员是 sa1/sa5/sa7…）、`SetUp_tun5`（成员是 tən5/ten5/tuen5/tin5…）用的是该音类的代表读音。2026-10-08 审计时 141 组里有 100 组如此，是正常结构，按既有组名使用即可；
 - `cognate_pipeline.py` 的 `pascal_tag()` / `group_prefix()` 就是这条规则的实现，自动分组与人工条目都走它。
 
@@ -186,7 +187,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 ② 注释的语义与该组**义项**相符，且经人工确认。
 **「音类对得上」只是必要条件，入组理由须是注释语义相符**：同点同韵母里挤着几百个字，`SetUp_tun5` 就出现过
 同点同韵母的 `敦 ten1` 注释是「敦促」、与该组的「敦／竖起」不是一个词。本规则**不追溯存量**
-（现有 2,657 条成员中 575 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
+（现有 2,686 条成员中 580 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
 
 维护者另有一套本机技能（同韵母比较判归音类、桥字验证、人工编辑同源词、CSV 导出）——**不随仓库分发**，仓库内的 `tools/*.py` 才是唯一事实来源。
 
@@ -233,17 +234,17 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-18 项仪器化测试（数据层 12 + 界面 6），需要模拟器或真机：
+19 项仪器化测试（数据层 13 + 界面 6），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 18/18
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 19/19
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
-- 另有 24 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
+- 另有 28 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
 - `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
@@ -282,7 +283,7 @@ debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`�
    ```
 3. 资料更新后别忘了 `README.md` 里的三个数字（方言点数、同音字组数、读音条数）。
 4. `tools/tables/` 不存在于仓库中，任何指向 `tools/tables/...` 的文档路径都只是**上游 MCPDict 的相对位置**，不是本仓库的文件。
-5. 方言岛（如分区归「闽」的点）默认不显示，要在 App 里勾选对应筛选才会出现——`SearchViewModel.isDialectVisible()` 按「音典分区」前缀分派，`闽`／`岭东`／`岭南` 归在「湘南土话」那一组开关下。
+5. **方言筛选走分区树，不再按「方言岛」分单组开关。** 右上「方言筛选」对话框显示音典一级／二级／三级分区树（全部展开、多选、父节点三态）；默认不筛选（全部显示）。方言岛（闽／岭东／岭南）在各自分区叶子下勾选即显示；`SearchViewModel.isDialectVisible()` 以 `leafKey()`（前三段分区路径）是否在 `selected` 集合判断。改筛选会即时重跑当前检索。
 6. Gradle 开了 `org.gradle.configuration-cache=true`；AGP 8.7.3 与 Kotlin 2.0.21 是硬绑定，`org.jetbrains.kotlin.android` 与 `org.jetbrains.kotlin.plugin.compose` 两个 plugin 版本必须保持一致。
 7. 数据库备份档 `*.db.bak-YYYYMMDD-HHMMSS` 由管线自动产生，留在 `app/src/main/assets/databases/` 会被一起打进 APK——App 根本不读它们。已在 `.gitignore` 加 `*.db.bak-*`，仍请在出包前确认该目录只剩两个 `.db`。
 8. **2026-10-04 重写过一次 git 历史**（`git-filter-repo`），剔除非代码 blob：`--strip-blobs-bigger-than 1M`，加 `*.tsv`／`*.geojson`／`*.ttf`／`*.otf`／`*.apk`／`*.db`／`*.csv`／`*.xlsx`／`*.zip`／`*.DS_Store` 等 glob，加历史遗留目录 `tools/tables`、`方言.geojson`、`bin`、`font`、`cgi`、`libs`、`gen`、`.settings`、`.kotlin`、`assets/databases`、`app/src/main/assets/maps`、`app/src/main/res/font`。结果：`.git` 由 **882 MB 降至 9 MB**，提交数 1672 → 740（被剪掉的是只动数据、重写后变空的提交，代码提交全在），19 个 tag 全部重写并强推。**重写后 `HEAD^{tree}` 与重写前逐位元组相同**（`4b7b0c941040efab83d031611b88a890720222f5`），代码内容零改动；全新 clone 可以正常 `assembleDebug` 并打出带数据库的 APK。三条后果要记住：
