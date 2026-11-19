@@ -4,7 +4,9 @@ import kotlinx.coroutines.delay
 import org.siongdict.app.data.CognateBook
 import org.siongdict.app.data.CognateEntry
 import org.siongdict.app.data.CognateGroup
+import org.siongdict.app.data.CognateMembership
 import org.siongdict.app.data.DatabaseMaintenance
+import org.siongdict.app.data.DialectProfile
 import org.siongdict.app.data.Lexicon
 import org.siongdict.app.data.SearchResult
 import org.siongdict.app.data.ToneSystem
@@ -18,9 +20,11 @@ class FakeLexicon : Lexicon {
     var onToneSystem: (String) -> ToneSystem? = { null }
     var onDialectDivision: (String) -> String = { "" }
     var onDialectDivisions: () -> Map<String, String> = { emptyMap() }
+    var onDialectProfiles: () -> List<DialectProfile> = { emptyList() }
 
     val charQueries = mutableListOf<String>()
     var divisionLoads = 0
+    var profileLoads = 0
 
     override suspend fun searchByChar(hz: String): List<SearchResult> {
         charQueries += hz
@@ -39,16 +43,29 @@ class FakeLexicon : Lexicon {
         divisionLoads++
         return onDialectDivisions()
     }
+
+    override suspend fun dialectProfiles(): List<DialectProfile> {
+        profileLoads++
+        return onDialectProfiles()
+    }
 }
 
 class FakeCognateBook : CognateBook {
 
     var onSearch: suspend (String) -> List<CognateGroup> = { emptyList() }
     var onGroupFor: suspend (String, String) -> CognateGroup? = { _, _ -> null }
+    var onMemberships: () -> List<CognateMembership> = { emptyList() }
+
+    var membershipLoads = 0
 
     override suspend fun search(query: String): List<CognateGroup> = onSearch(query)
 
     override suspend fun groupFor(lang: String, ipa: String): CognateGroup? = onGroupFor(lang, ipa)
+
+    override suspend fun memberships(): List<CognateMembership> {
+        membershipLoads++
+        return onMemberships()
+    }
 }
 
 class FakeMaintenance(var outdated: Boolean = false) : DatabaseMaintenance {

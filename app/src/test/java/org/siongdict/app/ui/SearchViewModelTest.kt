@@ -11,9 +11,12 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.siongdict.app.data.CognateMembership
+import org.siongdict.app.data.DialectProfile
 import org.siongdict.app.data.SearchMode
 import org.siongdict.app.fakes.FakeCognateBook
 import org.siongdict.app.fakes.FakeLexicon
@@ -41,6 +44,36 @@ class SearchViewModelTest {
     }
 
     private fun viewModel() = SearchViewModel(maintenance, lexicon, cognates, "test", dispatcher)
+
+    /**
+     * 聚类测试资料：甲乙共享 Press/Hide 两个义项且同音类组，丙丁共享 Cut/Bend，
+     * 戊无同源词（不算 active），己只有 1 个义项（用于验证 minTags 门槛）。
+     */
+    private fun seedClusterData() {
+        lexicon.onDialectProfiles = {
+            listOf(
+                DialectProfile("甲", "湘語－甲區", "#1E88E5", "01"),
+                DialectProfile("乙", "湘語－甲區", "#E53935", "02"),
+                DialectProfile("丙", "湘語－乙區", "#43A047", "03"),
+                DialectProfile("丁", "湘語－乙區", "#FDD835", "04"),
+                DialectProfile("戊", "湘語－丙區", "#8E24AA", "05"),
+                DialectProfile("己", "湘語－丙區", "#FB8C00", "06")
+            )
+        }
+        cognates.onMemberships = {
+            listOf(
+                CognateMembership("甲", "Press_gin4", "Press"),
+                CognateMembership("甲", "Hide_dzɔŋ2", "Hide"),
+                CognateMembership("乙", "Press_gin4", "Press"),
+                CognateMembership("乙", "Hide_dzɔŋ2", "Hide"),
+                CognateMembership("丙", "Cut_sa1", "Cut"),
+                CognateMembership("丙", "Bend_van1", "Bend"),
+                CognateMembership("丁", "Cut_sa1", "Cut"),
+                CognateMembership("丁", "Bend_van1", "Bend"),
+                CognateMembership("己", "Sit_tu6", "Sit")
+            )
+        }
+    }
 
     @Test
     fun charSearchBuildsOneCardPerVariantSortedByDialectCount() = runTest(dispatcher) {
@@ -248,5 +281,136 @@ class SearchViewModelTest {
         assertEquals(1, maintenance.prepareCount)
         assertEquals(0, maintenance.resetCount)
         assertEquals("test", vm.uiState.value.appVersion)
+    }
+
+    // ─── 聚类分析（研究入口） ───
+
+    @Test
+    fun openClusterAnalysisLoadsSnapshotAndComputesResult() = runTest(dispatcher) {
+        seedClusterData()
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.openClusterAnalysis()
+        advanceUntilIdle()
+
+        val state = vm.clusterState.value
+        assertTrue(state.visible)
+        assertFalse(state.loading)
+        assertNull(state.error)
+        val result = state.result
+        assertEquals(6, result?.visibleDialects ?: -1)
+        // 戊 无同源词被排除；己 只有 1 个义项，在 minTags=1 时仍参与
+        assertEquals(5, result?.points?.size ?: -1)
+        assertEquals(1, result?.excludedNoCognates ?: -1)
+        assertEquals(0, result?.excludedSparse ?: -1)
+        assertEquals(2, state.maxMinTags)
+        // 只有组内两对相似度为正，跨群相似度 0 不成边
+        assertEquals(2, state.edges.size)
+        assertEquals(1, lexicon.profileLoads)
+        assertEquals(1, cognates.membershipLoads)
+
+        // 方言筛选取「湘語－甲區」：只剩甲乙两点参与，且复用内存快照不重读库
+        vm.updateFilters(DialectFilters(selected = setOf("湘語－甲區")))
+        vm.closeClusterAnalysis()
+        vm.openClusterAnalysis()
+        advanceUntilIdle()
+
+        val filtered = vm.clusterState.value
+        assertEquals(2, filtered.result?.visibleDialects ?: -1)
+        assertEquals(2, filtered.result?.points?.size ?: -1)
+        assertEquals("筛选变化只切片内存快照，不重读库", 1, lexicon.profileLoads)
+        assertEquals(1, cognates.membershipLoads)
+        assertEquals(2, filtered.maxMinTags)
+
+        // 筛选命中不到任何分区叶子：0 个可见点，不崩
+        vm.updateFilters(DialectFilters(selected = setOf("不存在－分區")))
+        vm.closeClusterAnalysis()
+        vm.openClusterAnalysis()
+        advanceUntilIdle()
+
+        val empty = vm.clusterState.value
+        assertNull(empty.error)
+        assertEquals(0, empty.result?.visibleDialects ?: -1)
+        assertTrue(empty.result?.points?.isEmpty() ?: false)
+        assertFalse(empty.loading)
+    }
+
+    @Test
+    fun setClusterCountSwitchesPartitionWithoutRecompute() = runTest(dispatcher) {
+        seedClusterData()
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.openClusterAnalysis()
+        advanceUntilIdle()
+
+        val resultBefore = vm.clusterState.value.result
+        val profileLoadsBefore = lexicon.profileLoads
+        val membershipLoadsBefore = cognates.membershipLoads
+
+        vm.setClusterCount(3)
+        advanceUntilIdle()
+
+        val state = vm.clusterState.value
+        assertEquals(3, state.selectedK ?: -1)
+        assertEquals(3, state.partition?.k ?: -1)
+        assertEquals("切换 k 只换分区，不重算", resultBefore, state.result)
+        assertEquals(profileLoadsBefore, lexicon.profileLoads)
+        assertEquals(membershipLoadsBefore, cognates.membershipLoads)
+
+        // 回到自动：分区改用 optimalK
+        vm.setClusterCount(null)
+        advanceUntilIdle()
+        assertEquals(null, vm.clusterState.value.selectedK)
+        assertEquals(
+            vm.clusterState.value.result?.optimalK,
+            vm.clusterState.value.partition?.k
+        )
+    }
+
+    @Test
+    fun setMinTagsRecomputesFromSnapshotAndResetClearsClusterState() = runTest(dispatcher) {
+        seedClusterData()
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.openClusterAnalysis()
+        advanceUntilIdle()
+        assertEquals(5, vm.clusterState.value.result?.points?.size ?: -1)
+
+        val profileLoadsBefore = lexicon.profileLoads
+        vm.setMinTags(2)
+        advanceUntilIdle()
+
+        val state = vm.clusterState.value
+        assertEquals(2, state.minTags)
+        // 己 的义项数（1）低于门槛，被排除
+        assertEquals(4, state.result?.points?.size ?: -1)
+        assertEquals(1, state.result?.excludedSparse ?: -1)
+        assertEquals("复算复用快照，不再读库", profileLoadsBefore, lexicon.profileLoads)
+
+        // 上限由完整快照固定：调高门槛后不缩水，滑桿范围恒包含当前值
+        assertEquals("调高门槛后上限不变", 2, state.maxMinTags)
+        assertTrue("上限必须不小于当前值", state.maxMinTags >= state.minTags)
+
+        // 还能再调回 1（上限不变，被排除的点重新参与）
+        vm.setMinTags(1)
+        advanceUntilIdle()
+        val lowered = vm.clusterState.value
+        assertEquals(1, lowered.minTags)
+        assertEquals(2, lowered.maxMinTags)
+        assertEquals(5, lowered.result?.points?.size ?: -1)
+        assertEquals(0, lowered.result?.excludedSparse ?: -1)
+
+        // 重置数据库：快照与聚类状态一起作废（对话关闭）
+        vm.resetDatabases()
+        advanceUntilIdle()
+        assertFalse(vm.clusterState.value.visible)
+        assertNull(vm.clusterState.value.result)
+
+        // 重置后再打开必须重新读库
+        vm.openClusterAnalysis()
+        advanceUntilIdle()
+        assertTrue(vm.clusterState.value.visible)
+        assertEquals(profileLoadsBefore + 1, lexicon.profileLoads)
     }
 }

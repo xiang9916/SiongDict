@@ -13,6 +13,14 @@ interface CognateBook {
     suspend fun search(query: String): List<CognateGroup>
 
     suspend fun groupFor(lang: String, ipa: String): CognateGroup?
+
+    /**
+     * 全库同源词成员（lang 非空），供聚类分析按方言点聚合。
+     *
+     * 一条记录对应 (lang, semanticTag, groupId)：同义项多音类组会重复出现同一 lang+tag。
+     * 库缺失时返回空列表；本方法不做缓存（每次读全表 2.7k 行，代价可忽略）。
+     */
+    suspend fun memberships(): List<CognateMembership>
 }
 
 internal class LocalCognateBook(
@@ -52,6 +60,25 @@ internal class LocalCognateBook(
             arrayOf(lang, ipa)
         ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: return@run null
         readGroup(db, groupId)
+    }
+
+    override suspend fun memberships(): List<CognateMembership> = gate.run {
+        val db = files.cognates() ?: return@run emptyList()
+        val result = mutableListOf<CognateMembership>()
+        db.rawQuery("SELECT lang, cognate_group, semantic_tag FROM cognates", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val lang = cursor.getString(0) ?: continue
+                if (lang.isBlank()) continue
+                result.add(
+                    CognateMembership(
+                        lang = lang,
+                        groupId = cursor.getString(1) ?: "",
+                        semanticTag = cursor.getString(2) ?: "",
+                    )
+                )
+            }
+        }
+        result
     }
 
     /** 读出一整组的成员；组内按音典排序。组不存在（空）时返回 null。 */

@@ -27,6 +27,13 @@ interface Lexicon {
 
     /** 全部方言点的音典分区（簡稱 → 分區）；空白分区不進 map。 */
     suspend fun dialectDivisions(): Map<String, String>
+
+    /**
+     * 全部方言点画像（簡稱 空白者跳过）；按 (音典排序, 簡稱) 升序。
+     *
+     * [dialectDivisions] 由本方法的结果派生，两处共用同一份 generation 缓存。
+     */
+    suspend fun dialectProfiles(): List<DialectProfile>
 }
 
 internal class LocalLexicon(
@@ -42,6 +49,7 @@ internal class LocalLexicon(
 
     private var toneSystems: Map<String, ToneSystem>? = null
     private var divisions: Map<String, String>? = null
+    private var profiles: List<DialectProfile>? = null
     private var cacheGeneration = -1
 
     // ─── 检索 ───
@@ -92,17 +100,55 @@ internal class LocalLexicon(
         divisionCache()
     }
 
-    /** 音典分区缓存（簡稱 → 分區）；空分区不入 map。 */
+    override suspend fun dialectProfiles(): List<DialectProfile> = gate.run {
+        ensureGeneration()
+        profileList()
+    }
+
+    /**
+     * 音典分区缓存（簡稱 → 分區），由方言点画像派生；空分区不入 map。
+     * 画像顺序即 (音典排序, 簡稱)，因此分区树的首次出现顺序也随之固定。
+     */
     private fun divisionCache(): Map<String, String> =
-        divisions ?: loadInfoColumn("音典分區") { it.ifEmpty { null } }.also {
+        divisions ?: profileList().mapNotNull { profile ->
+            profile.division.ifEmpty { null }?.let { profile.lang to it }
+        }.toMap().also {
             divisions = it
             Log.i(TAG, "Loaded divisions for ${it.size} dialects")
         }
+
+    /** 方言点画像缓存；空白簡稱在载入时即跳过，列顺序固定为 (音典排序, 簡稱)。 */
+    private fun profileList(): List<DialectProfile> =
+        profiles ?: loadProfiles().also {
+            profiles = it
+            Log.i(TAG, "Loaded profiles for ${it.size} dialects")
+        }
+
+    private fun loadProfiles(): List<DialectProfile> {
+        val list = mutableListOf<DialectProfile>()
+        files.siongdict().rawQuery("SELECT 簡稱, 音典分區, 音典顏色, 音典排序 FROM info", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val lang = cursor.getString(0) ?: continue
+                if (lang.isBlank()) continue
+                list.add(
+                    DialectProfile(
+                        lang = lang,
+                        // 分区/颜色空白时保留空串：调用方自己决定如何降级显示。
+                        division = cursor.getString(1) ?: "",
+                        colorHex = cursor.getString(2) ?: "",
+                        sortKey = cursor.getString(3) ?: "",
+                    )
+                )
+            }
+        }
+        return list.sortedWith(compareBy({ it.sortKey }, { it.lang }))
+    }
 
     private fun ensureGeneration() {
         if (cacheGeneration == files.generation) return
         toneSystems = null
         divisions = null
+        profiles = null
         cacheGeneration = files.generation
     }
 

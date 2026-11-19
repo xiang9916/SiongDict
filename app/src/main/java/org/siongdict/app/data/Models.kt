@@ -49,3 +49,28 @@ data class CognateGroup(
     val semanticLabel: String,
     val members: List<CognateEntry>
 )
+
+/**
+ * 方言点画像（info 表）：簡稱、音典分区、音典颜色（#RRGGBB）与音典排序。
+ *
+ * 供聚类分析建立「方言点」画布：分区与颜色直接取自音典元数据，
+ * 解析层（analysis）只消费这个纯值对象，不接触数据库。
+ */
+data class DialectProfile(
+    val lang: String,
+    val division: String,
+    val colorHex: String,
+    val sortKey: String
+)
+
+/**
+ * 同源词成员关系：某个方言点在某义项（[semanticTag]）下的某个音类组（[groupId]）里有一条记录。
+ *
+ * 这是聚类相似度的最小输入：一个 (lang, semanticTag) 可能对应多个 groupId
+ * （同义项多音类组），相似度按义项聚合后再判断是否共享组。
+ */
+data class CognateMembership(
+    val lang: String,
+    val groupId: String,
+    val semanticTag: String
+)

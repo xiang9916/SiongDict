@@ -63,10 +63,12 @@ import org.siongdict.app.ui.theme.SiongDarkRed
 @Composable
 fun SearchScreen(viewModel: SearchViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val clusterState by viewModel.clusterState.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showInfoDialog by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
+    var showResearchDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -76,6 +78,13 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
                 },
                 actions = {
+                    IconButton(onClick = { showResearchDialog = true }) {
+                        Icon(
+                            SiongIcons.Research,
+                            contentDescription = "研究",
+                            tint = Color.White
+                        )
+                    }
                     IconButton(onClick = { showFilterDialog = true }) {
                         Icon(
                             SiongIcons.Visibility,
@@ -130,6 +139,26 @@ fun SearchScreen(viewModel: SearchViewModel) {
 
     if (showInfoDialog) {
         InfoDialog(viewModel = viewModel, onDismiss = { showInfoDialog = false })
+    }
+
+    if (showResearchDialog) {
+        ResearchDialog(
+            onDismiss = { showResearchDialog = false },
+            onOpenClusterAnalysis = {
+                showResearchDialog = false
+                viewModel.openClusterAnalysis()
+            }
+        )
+    }
+
+    if (clusterState.visible) {
+        ClusterAnalysisDialog(
+            state = clusterState,
+            onDismiss = viewModel::closeClusterAnalysis,
+            onClusterCount = viewModel::setClusterCount,
+            onMinTags = viewModel::setMinTags,
+            onSelectPoint = viewModel::selectClusterPoint
+        )
     }
 }
 

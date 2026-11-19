@@ -970,4 +970,116 @@ class DataLayerTest {
         }
     }
 
+    /**
+     * 方言点画像端口（聚类分析的数据入口）：info 表 491 个方言点全部载入；
+     * 分区非空；音典颜色符合 #RRGGBB / #AARRGGBB 或逗号分隔双色；長沙 实测颜色为 #148047；
+     * 画像顺序按 (音典排序, 簡稱) 升序，保证画布与分区树顺序稳定。
+     *
+     * 491 / 長沙颜色是查 real 库（2026-11-19）确认的版本事实，上游改数据后应同步核对再改断言。
+     */
+    @Test
+    fun dialectProfilesLoadFromInfo() = runBlocking {
+        val profiles = data().lexicon.dialectProfiles()
+
+        assertEquals("info 表 491 个方言点都应载入画像", 491, profiles.size)
+        assertTrue(
+            "簡稱不得为空：" + profiles.count { it.lang.isBlank() } + " 条",
+            profiles.all { it.lang.isNotBlank() }
+        )
+        assertTrue(
+            "分区不得为空：" + profiles.count { it.division.isBlank() } + " 条",
+            profiles.all { it.division.isNotBlank() }
+        )
+
+        // 音典颜色有两种合法形态：#RRGGBB（或 #AARRGGBB）单色；双色用半角逗号分隔。
+        val hex = "#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})"
+        val single = Regex("^" + hex + "$")
+        val pair = Regex("^" + hex + "(?:," + hex + ")+$")
+        val badColors = profiles.filterNot { single.matches(it.colorHex) || pair.matches(it.colorHex) }
+        assertTrue(
+            "音典颜色格式非法：" + badColors.take(5).map { it.lang to it.colorHex },
+            badColors.isEmpty()
+        )
+
+        // 長沙：查库确认音典分区「湘贛－北湘－星城」、颜色 #148047（单色）。
+        val changsha = profiles.firstOrNull { it.lang == "長沙" }
+        assertNotNull("画像中应含 長沙", changsha)
+        assertEquals("長沙 音典分区", "湘贛－北湘－星城", changsha!!.division)
+        assertTrue(
+            "長沙 音典颜色应以 #148047 开头，实际 " + changsha.colorHex,
+            changsha.colorHex.startsWith("#148047")
+        )
+
+        // 端口保证按 (音典排序, 簡稱) 升序：sortKey 序列非递减。
+        val sortKeys = profiles.map { it.sortKey }
+        assertEquals("画像应按音典排序非递减", sortKeys.sorted(), sortKeys)
+
+        // 同一 sortKey 内按簡稱升序，顺序完全确定（否则分区树首次出现顺序会抖动）。
+        val stable = profiles.zipWithNext().all { (a, b) ->
+            a.sortKey < b.sortKey || (a.sortKey == b.sortKey && a.lang <= b.lang)
+        }
+        assertTrue("同一音典排序内应按簡稱升序", stable)
+    }
+
+    /**
+     * 同源词成员关系端口（聚类相似度的最小输入）：全表 2,757 条、382 个方言点、201 组、137 个义项；
+     * 每条 groupId 必须以 semanticTag + "_" 开头；抽查 Pile_tsut7（25 条）与 Curse_ʃwien3（8 条）；
+     * 端口结果须与 cognates.db 直读的 (lang, groupId, semanticTag) 三元组完全一致。
+     *
+     * 2,757 / 382 / 201 / 137 与两组条数是查 real 库（2026-11-19）确认的版本事实。
+     */
+    @Test
+    fun cognateMembershipsMatchDatabase() = runBlocking {
+        val d = data()
+        d.maintenance.prepare()
+        val memberships = d.cognateBook.memberships()
+
+        assertEquals("cognates 全表 2,757 条成员", 2757, memberships.size)
+        assertEquals("成员应覆盖 382 个方言点", 382, memberships.map { it.lang }.distinct().size)
+        assertEquals("成员应覆盖 201 个音类组", 201, memberships.map { it.groupId }.distinct().size)
+        assertEquals("成员应覆盖 137 个义项", 137, memberships.map { it.semanticTag }.distinct().size)
+
+        assertTrue("lang 不得为空", memberships.all { it.lang.isNotBlank() })
+        assertTrue("groupId 不得为空", memberships.all { it.groupId.isNotBlank() })
+        assertTrue("semanticTag 不得为空", memberships.all { it.semanticTag.isNotBlank() })
+
+        val badPrefix = memberships.filterNot { it.groupId.startsWith(it.semanticTag + "_") }
+        assertTrue(
+            "groupId 必须以 semanticTag+下划线 开头：" +
+                badPrefix.take(5).map { Triple(it.lang, it.semanticTag, it.groupId) },
+            badPrefix.isEmpty()
+        )
+
+        // 已知组抽查：Pile_tsut7 25 条（义项 Pile）、Curse_ʃwien3 8 条（义项 Curse）。
+        val pile = memberships.filter { it.groupId == "Pile_tsut7" }
+        assertEquals("Pile_tsut7 应有 25 条成员", 25, pile.size)
+        assertTrue("Pile_tsut7 的义项都应为 Pile", pile.all { it.semanticTag == "Pile" })
+
+        val curse = memberships.filter { it.groupId == "Curse_ʃwien3" }
+        assertEquals("Curse_ʃwien3 应有 8 条成员", 8, curse.size)
+        assertTrue("Curse_ʃwien3 的义项都应为 Curse", curse.all { it.semanticTag == "Curse" })
+
+        // 与库直读比对：端口不得漏行、多行或串错字段。
+        val db = SQLiteDatabase.openDatabase(
+            ctx.getDatabasePath("cognates.db").absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            val fromDb = mutableSetOf<String>()
+            db.rawQuery(
+                "SELECT lang, cognate_group, semantic_tag FROM cognates WHERE lang IS NOT NULL AND TRIM(lang) <> ''",
+                null
+            ).use { c ->
+                while (c.moveToNext()) {
+                    fromDb.add(c.getString(0) + "|" + c.getString(1) + "|" + c.getString(2))
+                }
+            }
+            val fromPort = memberships.map { it.lang + "|" + it.groupId + "|" + it.semanticTag }.toSet()
+            assertEquals("端口应与 cognates.db 直读的三元组一致", fromDb, fromPort)
+        } finally {
+            db.close()
+        }
+    }
+
 }

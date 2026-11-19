@@ -1,6 +1,6 @@
 # AGENTS.md — 湘典 SiongDict 开发须知
 
-> 给在此仓库工作的 AI／开发者。**2026-11-16 汇总**，代码对应 `0.5-alpha.1`。
+> 给在此仓库工作的 AI／开发者。**2026-11-19 汇总**，代码对应 `0.5-alpha.2`。
 >
 > ⚠️ **本文件在仓库内、会随仓库一起公开** —— 所以这里只写可公开的事实：不含建置机绝对路径（`/Users/<使用者名>/…`）、
 > 不含任何签名凭证或其口令、不含未公开的个人资料。动代码、资料或发版之前先读一遍。
@@ -9,7 +9,7 @@
 
 - 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索，无需联网。
 - 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
-- 当前版本 **0.5-alpha.1**：`versionCode 49`、`versionName "0.5-alpha.1"`，只存在于 `app/build.gradle`。
+- 当前版本 **0.5-alpha.2**：`versionCode 50`、`versionName "0.5-alpha.2"`，只存在于 `app/build.gradle`。
 - 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
 - 资料规模：**491 个方言点**、**609,323 条读音**、124,577 组同音字；同源词 **201 组 / 2,757 条**（全数人工标注，无自动条目）。
 - git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
@@ -56,23 +56,38 @@ app/src/main/java/org/siongdict/app/
   data/LocalData.kt          本地数据层装配根（端口 + 共享设施）
   data/Models.kt             资料模型
   data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
+  analysis/ClusterModels.kt  聚类分析结果模型（点、分区、稀疏阈值 0.25）
+  analysis/Similarity.kt     义项相似度 → 距离矩阵（共同义项 +1／−1／不计）
+  analysis/HierarchicalClustering.kt UPGMA 平均链接 + 轮廓系数（k=2..min(10,n−1)）
+  analysis/ClusterLayout.kt  确定性力导向布局（无随机数，200 轮）
+  analysis/ClusterEngine.kt  聚类入口（筛选树切片、minTags 排除、稀疏判定）
   ui/SearchScreen.kt         检索主界面（搜索栏、模式切换、结果列表与右侧跳转条、方言筛选）
   ui/DialectTree.kt         方言筛选树（音典分区 → 三级节点、纯函数）
   ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
   ui/InfoDialog.kt           「關於」面板（说明页、简体渲染开关、重置資料庫）
   ui/UiText.kt               显示层文本工具（简体渲染、字组标题）
-  ui/icons/SiongIcons.kt     内联的两个 Material 图标（替代 material-icons-extended）
+  ui/icons/SiongIcons.kt     内联图标（两个 Material 图标 + 自绘「研究」放大镜原子图；替代 material-icons-extended）
   ui/theme/Theme.kt          品牌色与 Material 3 主题
-  ui/SearchViewModel.kt      检索、分组、方言筛选（构造注入数据端口，普通 ViewModel）
+  ui/SearchViewModel.kt      检索、分组、方言筛选、聚类分析（构造注入数据端口，普通 ViewModel）
   ui/SearchViewModelFactory.kt 生产装配（LocalData → 三个端口注入 ViewModel）
   ui/CognateExport.kt        同源词 CSV 导出
+  ui/ResearchDialog.kt       「研究」一级对话框（目前只有聚类分析一项）
+  ui/ClusterAnalysisDialog.kt 聚类分析全屏对话框（摘要、参数、图例、选中点详情）
+  ui/ClusterMap.kt           聚类散点画布（凸包、连线、手势缩放平移、点选）
+  ui/ClusterColors.kt        类别调色盘与音典颜色解析（#RRGGBB／双色渐变）
 app/src/androidTest/java/org/siongdict/app/
-  DataLayerTest.kt           数据层回归（只读连接、自愈重拷、异体展开、同源词、声调、重置、检索/重置串行化）
-  UiSmokeTest.kt             界面回归（首帧、重复字、三模式、方言筛选、关于面板）
+  DataLayerTest.kt           数据层回归（只读连接、自愈重拷、异体展开、同源词、声调、重置、检索/重置串行化、方言画像、同源词成员）
+  UiSmokeTest.kt             界面回归（首帧、重复字、三模式、方言筛选、关于面板、研究入口）
 app/src/test/java/org/siongdict/app/
   data/ToneFormatterTest.kt  声调格式化（纯函数，JVM）
   data/VariantIndexTest.kt   变体展开（纯逻辑，JVM）
-  ui/SearchViewModelTest.kt  检索装配/分组/筛选/代际守卫（fake 端口，JVM）
+  analysis/SimilarityTest.kt 义项相似度与距离（纯函数，JVM）
+  analysis/HierarchicalClusteringTest.kt UPGMA／轮廓系数／平手规则（纯函数，JVM）
+  analysis/ClusterLayoutTest.kt 布局确定性与边界（纯函数，JVM）
+  analysis/ClusterEngineTest.kt 筛选切片、minTags、稀疏判定（纯函数，JVM）
+  ui/ClusterColorsTest.kt    调色盘与颜色解析（纯函数，JVM）
+  ui/DialectTreeTest.kt      方言筛选树（分区路径与叶子键，纯函数，JVM）
+  ui/SearchViewModelTest.kt  检索装配/分组/筛选/代际守卫/聚类快照（fake 端口，JVM）
   fakes/Fakes.kt             测试用 fake 端口
 app/src/main/assets/
   databases/siongdict.db    ★ 不入库，必须自行重建（§3、§4）
@@ -191,6 +206,18 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 维护者另有一套本机技能（同韵母比较判归音类、桥字验证、人工编辑同源词、CSV 导出）——**不随仓库分发**，仓库内的 `tools/*.py` 才是唯一事实来源。
 
+### 5.1 聚类分析数据流（「研究」入口）
+
+「研究」不是检索模式，而是独立的对照工具：顶栏「研究」图标 → `ResearchDialog` → `ClusterAnalysisDialog`。全部在手机端计算，离线、不新增依赖。
+
+- **输入**：`Lexicon.dialectProfiles()`（`info` 表的 簡稱/音典分區/音典顏色/音典排序，491 点）+ `CognateBook.memberships()`（`cognates` 的 lang/cognate_group/semantic_tag，2,757 条）。首次打开在 IO 上读一次存快照；之后调参只重算、不再读库；重置数据库作废快照并关闭对话框。
+- **范围**：先按**当地方言筛选树**切片（`selected == null` 全收，否则 `leafKey(division) ∈ selected`，与检索共用同一套前三段分区叶子键）；再排除没有同源词的点与义项数低于「最小义项数」的点。对话框摘要显式列出「可见方言点 N · 义项 T · 无同源词排除 x · 义项不足排除 y」。
+- **算法**（`analysis/` 五个纯 Kotlin 文件）：义项 = `semantic_tag`；共同义项下共享至少一个 `cognate_group` 记 +1、都收录但无共享记 −1、缺义项不计；s = 总分／共同义项数，距离 d = (1−s)/2（无共同义项时 d = 0.5）；UPGMA 平均链接，记录 k = 2..min(10, n−1) 的分区，用原始距离算平均轮廓系数并取最大者（平手取小 k），< 0.25 标「数据稀疏」；布局是从半径 0.4、圆心 (0.5, 0.5) 的圆周出发的确定性力导向（斥力 + 正相似度最高 8 邻弹簧 + 向心，200 轮，无随机数），同一份资料坐标恒定。
+- **交互**：分类数滑桿只换分区、不重跑（`selectedK`，可回「自动」）；最小义项数滑桿松手后按快照重算，上限固定为快照中最大义项数（夹在 1..10），调高门槛不会缩水；点节点看该点义项／条目数并高亮所属类别；画布支持 1–8 倍缩放与平移。
+- **配色**：节点用音典顏色（`#RRGGBB`／`#AARRGGBB`／逗号双色渐变），类别用固定 10 色调色盘（凸包填色与图例），两套不混用。
+- **复杂度**：O(n² + 成员条数)，n ≤ 382（有同源词的点），手机端毫秒到百毫秒级。
+- 决策与取舍见 `docs/adr/0008-cluster-analysis.md`。
+
 ## 6. 版本号与发版
 
 **`versionCode` 每个对外 tag 严格 +1**，按顺序递增：
@@ -214,8 +241,9 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 | 0.4-rc.13 | 47 |
 | 0.4-rc.14 | 48 |
 | 0.5-alpha.1 | 49 |
+| 0.5-alpha.2 | 50 |
 
-`versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。0.4-rc.14 之后进入 `0.5-alpha.N` 系列，首版为 `0.5-alpha.1` / code 49。
+`versionName` 自 0.4-rc.4 起采 `0.4-rc.N` 形式（取代原先的 `0.4.N` 递增）；0.4.4 从未出包，所以接在 0.4.3 后面的是 `0.4-rc.4` / code 38，而不是 39。0.4-rc.14 之后进入 `0.5-alpha.N` 系列，首版为 `0.5-alpha.1` / code 49；`0.5-alpha.2` / code 50 为「研究」入口与聚类分析。下一个对外版本用 `0.5-alpha.3` / code 51。
 
 **版本号是唯一把新资料推给既有使用者的机制。** `isOutdated()` 拿 `versionName` 字符串与 SharedPreferences 里记下的值做**不等比较**（`DatabaseMaintenance.isOutdated()`，实现是 `DatabaseFiles.isOutdated()`，不解析语意化版本），不相等就重拷 assets 里的数据库。所以**只要动了资料，就一定要 bump `versionName`**，否则老使用者永远留在旧资料上。
 
@@ -235,19 +263,20 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-19 项仪器化测试（数据层 13 + 界面 6），需要模拟器或真机：
+22 项仪器化测试（数据层 15 + 界面 7），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 19/19
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 22/22
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
-- 另有 28 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
+- 另有 42 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、聚类分析核心与配色）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
+- 本次（0.5-alpha.2）新增 3 项仪器化测试（`dialectProfilesLoadFromInfo` 方言画像、`cognateMembershipsMatchDatabase` 同源词成员、`researchOpensClusterAnalysis` 研究入口）与 14 项 JVM 测试（相似度 3、层次聚类 3、布局 1、聚类引擎 2、调色盘 2、ViewModel 聚类 3）。
 - `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
 
 ### 发 Release

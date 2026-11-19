@@ -81,7 +81,7 @@ SELECT count(*) FROM (
 ## 后果
 
 - 数据规模：488→491 点、604,504→609,323 条读音、123,898→124,577 组同音字。`cognates.db` 的库存变化来自同批 T2 写库（29 条 / 4 新组 / GetWet 改名），与本次重建无直接关系。
-- **发版必须 bump `versionName`**（目标 0.5-alpha.1 / versionCode 49）：`DatabaseFiles.isOutdated()` 以 `versionName` 不等比较作为重拷 assets 的唯一开关；资料变了不 bump，既有使用者永远留在旧库（AGENTS.md §6）。
+- **发版必须 bump `versionName`**（本批数据已在 0.5-alpha.1 / versionCode 49 发布；聚类分析另见 ADR-0008、随 0.5-alpha.2 / 50 发布）：`DatabaseFiles.isOutdated()` 以 `versionName` 不等比较作为重拷 assets 的唯一开关；资料变了不 bump，既有使用者永远留在旧库（AGENTS.md §6）。
 - App 的方言筛选树按 `info.音典分區` 动态生成，新增「湘贛－贛西－袁州」路径无需代码改动即可出现（T3 的三层树／四层归并规则）。
 - 测试：`DataLayerTest` 的库存与萍鄉断言（T5）、JVM 28 项（T3 + 既有 24）与仪器化 19 项（T5）同步更新；`cognateInventoryMatchesRelease` 的旧数字须一并改。
 - 上游 MCPDict 再变时，萍乡 3 点若消失／改名，同源词按「字组＋读音＋方言点」唯一匹配会失效，须人工检查引用（AGENTS.md §5）。
