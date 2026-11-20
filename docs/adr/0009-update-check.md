@@ -73,3 +73,4 @@ App 是离线工具，但使用者装的是从 GitHub Release 下载的 APK；�
 - 权限：`app/src/main/AndroidManifest.xml` 的 `INTERNET`。
 - 测试：JVM `data/VersionComparatorTest`（版本比较 2 项）与 `data/UpdateCheckerTest`（`parseLatestTag` 解析 2 项），只测纯函数、**绝不联网**；仪器化 `UiSmokeTest` 只断言更新行存在与可点，不对「已是最新／有新版本」这类依赖网络的结果断言（模拟器可能无网或限流）。
 - 文档：`AGENTS.md` §0／§2／§6／§7.10、`README.md`（两份）的离线说明改述。
+- 发布：0.5-alpha.4 / versionCode 52（2026-11-20）上线，为 App 首次引入联网检查更新。

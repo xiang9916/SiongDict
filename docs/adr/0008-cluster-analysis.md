@@ -108,3 +108,4 @@
 - 测试：JVM 共 64 项（聚类相关：`SimilarityTest` 4、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterLayoutTest` 6（力导向、分群锚点、布局补间）、`ClusterProjectionTest` 6、`ClusterEngineTest` 3（筛选切片、默认门槛、布局）、`ClusterColorsTest` 2、`SearchViewModelTest` 聚类 3；另含 ADR-0009 的 `VersionComparatorTest` 2 与 `UpdateCheckerTest` 2）；仪器化共 25 项（数据层 17 + 界面 8），其中 `clusterAnalysisUsesCommunityDetection` 断言真实库自动类数 ≥ 3 且模组度 > 0.2，并断言 `groupedLayout3D` 类内平均距离小于类间质心距离、用 `Log.i("ClusterTest", …)` 打印真实 k／Q／类别规模与类质心。最终 JVM 64/64、仪器化 25/25。
 - 验证：`./gradlew :app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`、`assembleDebug` 全绿；真实资料下 491 点、默认排除 108 点，摘要与图例数字自洽。
 - 发布：0.5-alpha.3 / versionCode 51（2026-11-20）对外发布，本 ADR 的社群偵测、三维可视化与聚拢动画随该版上线。
+- 发布：0.5-alpha.4 / versionCode 52（2026-11-20）对外发布，本 ADR 的全屏页与默认最小义项数随该版上线。
