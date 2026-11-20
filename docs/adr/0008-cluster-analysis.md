@@ -58,7 +58,8 @@
 
 - 输入先按**当地方言筛选树**切片：`DialectFilters.selected == null` 时全收；否则只留 `leafKey(division)` 命中的点，与检索的方言筛选同一套前三段分区叶子键。
 - 切片后再排除：没有同源词成员的点（`excludedNoCognates`）、义项数低于「最小义项数」的点（`excludedSparse`）。
-- 全屏页摘要固定显示「可见方言点 N · 义项 T · 无同源词排除 x · 义项不足排除 y」，让使用者知道图里排除了什么；最小义项数默认 1——491 点中 383 点有同源词，108 点默认被排除。
+- 全屏页摘要固定显示「可见方言点 N · 义项 T · 无同源词排除 x · 义项不足排除 y」，让使用者知道图里排除了什么。
+- 「最小义项数」的**默认值由数据决定**：在 1..上限 内逐个门槛试算「自动分群」的轮廓系数，取最大者（平手取小）。轮廓系数对小样本天然偏大，所以候选门槛另加**覆盖率下限**——参与点数不得少于有同源词点数的 50%（至少 2 点），否则真实库会一路挑到只剩 10 个点的门槛（2026-11-20 实测：不设限时最大值落在门槛 24／10 点）。加下限后真实库默认门槛 4：209/383 点参与，491 点中 108 点无同源词、174 点因义项不足被排除。
 - 关闭全屏页期间改方言筛选不会触发计算；下次打开时按当时的筛选状态重新切片，仍复用已读入的快照，不重读库。
 - 理由：聚类的对照基准应与使用者当前关心的方言范围一致；但图不能「悄悄少点」，所以排除计数必须显性可见。
 
@@ -72,9 +73,9 @@
 
 - 同源词：206 组 / 2,804 条（全部 manual），覆盖 383 个方言点、140 个义项。
 - 方言点：491 个（`info` 表）。
-- 默认参数（`minTags = 1`）：383 点参与、108 点无同源词被排除、0 点因义项不足被排除。
+- 默认参数（`minTags` 自动）：默认门槛 4 → 209 点参与、108 点无同源词被排除、174 点因义项不足被排除（2026-11-20 实测）；手动滑到 1 时 383 点全参与。
 - 义项数分布：1 个义项 81 点、2 个 67 点、3 个 27 点、4 个 30 点、5 个 25 点……最多 66 个（道縣梅花）。
-- 分类数：自動值 = 社群数（2026-11-20 仪器化实测（383 点、λ=2、2,804 条／206 组入库后）：**4 类**、模组度 **Q ≈ 0.2896**、类别规模 **183/115/37/48**；`clusterAnalysisUsesCommunityDetection` 的 `Log.i("ClusterTest", …)` 日志可复核）；手动可选 k = 2..min(10, n−1)；最小义项数滑桿范围 1..min(10, 快照中最大义项数)。
+- 分类数：自動值 = 社群数。2026-11-20 仪器化实测（λ=2、2,804 条／206 组入库后）：门槛 1（383 点）→ **4 类**、模组度 **Q ≈ 0.2896**、类别规模 **183/115/37/48**；默认门槛 4（209 点）→ **3 类**、**Q ≈ 0.1885**、义项不足排除 174 点。`clusterAnalysisUsesCommunityDetection` 的 `Log.i("ClusterTest", …)` 日志可复核；手动可选 k = 2..min(10, n−1)；最小义项数滑桿范围 1..min(10, 快照中最大义项数)。
 - 相似度收缩：λ = 2（s = 总分/(|T|+λ)，s ∈ (−1,1)）。
 - 稀疏阈值：模组度 < 0.15。
 - 布局参数：三维，200 轮、斥力系数 0.0025、每点 8 邻弹簧（0.8，自然长度 0.32）、向心 0.02、Fibonacci 球面初值（半径 0.4）、归一化到 [0,1]³。
@@ -104,6 +105,6 @@
 - 算法：`app/src/main/java/org/siongdict/app/analysis/` 六个纯 Kotlin 文件——`ClusterModels.kt`、`Similarity.kt`、`HierarchicalClustering.kt`、`CommunityDetection.kt`（确定性 Louvain）、`ClusterLayout.kt`、`ClusterEngine.kt`，不依赖 Android，可直接 JVM 测试。
 - 界面：`ui/ResearchDialog.kt`（「研究」一级入口，白底 Dialog + 右上「關閉」）、`ui/ClusterAnalysisScreen.kt`（全屏页，不套 Dialog；摘要、参数、图例、选中点详情）、`ui/ClusterMap.kt`（透视投影画布、凸包、连线、旋转／缩放／平移手势、标签、点选）、`ui/ClusterProjection.kt`（3D 透视投影纯函数）、`ui/ClusterColors.kt`（调色盘与颜色解析）、`ui/SearchViewModel.kt`（快照、筛选切片、代际守卫）、`ui/SearchScreen.kt`（入口装配）。
 - 数据：`data/Models.kt`（`DialectProfile`、`CognateMembership`）、`Lexicon.dialectProfiles()`、`CognateBook.memberships()`。
-- 测试：JVM 共 63 项（聚类相关：`SimilarityTest` 4、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterLayoutTest` 6（力导向、分群锚点、布局补间）、`ClusterProjectionTest` 6、`ClusterEngineTest` 2、`ClusterColorsTest` 2、`SearchViewModelTest` 聚类 3；另含 ADR-0009 的 `VersionComparatorTest` 2 与 `UpdateCheckerTest` 2）；仪器化共 25 项（数据层 17 + 界面 8），其中 `clusterAnalysisUsesCommunityDetection` 断言真实库自动类数 ≥ 3 且模组度 > 0.2，并断言 `groupedLayout3D` 类内平均距离小于类间质心距离、用 `Log.i("ClusterTest", …)` 打印真实 k／Q／类别规模与类质心。最终 JVM 63/63、仪器化 25/25。
+- 测试：JVM 共 64 项（聚类相关：`SimilarityTest` 4、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterLayoutTest` 6（力导向、分群锚点、布局补间）、`ClusterProjectionTest` 6、`ClusterEngineTest` 3（筛选切片、默认门槛、布局）、`ClusterColorsTest` 2、`SearchViewModelTest` 聚类 3；另含 ADR-0009 的 `VersionComparatorTest` 2 与 `UpdateCheckerTest` 2）；仪器化共 25 项（数据层 17 + 界面 8），其中 `clusterAnalysisUsesCommunityDetection` 断言真实库自动类数 ≥ 3 且模组度 > 0.2，并断言 `groupedLayout3D` 类内平均距离小于类间质心距离、用 `Log.i("ClusterTest", …)` 打印真实 k／Q／类别规模与类质心。最终 JVM 64/64、仪器化 25/25。
 - 验证：`./gradlew :app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`、`assembleDebug` 全绿；真实资料下 491 点、默认排除 108 点，摘要与图例数字自洽。
 - 发布：0.5-alpha.3 / versionCode 51（2026-11-20）对外发布，本 ADR 的社群偵测、三维可视化与聚拢动画随该版上线。

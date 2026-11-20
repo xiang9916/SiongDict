@@ -105,6 +105,39 @@ class ClusterEngineTest {
         )
     }
 
+    @Test
+    fun defaultMinTagsPicksThresholdWithBestSilhouette() {
+        // 甲/乙 共享 {x,y}、丙/丁 共享 {u,v}；戊 只有一个独有义项 w（孤立点）。
+        val profiles = listOf(
+            profile("甲", "湘北", "#111111"),
+            profile("乙", "湘北", "#111111"),
+            profile("丙", "湘南", "#222222"),
+            profile("丁", "湘南", "#222222"),
+            profile("戊", "湘西", "#333333"),
+        )
+        val memberships = listOf(
+            membership("甲", "Press_gin4", "Press"),
+            membership("甲", "Hide_dzɔŋ2", "Hide"),
+            membership("乙", "Press_gin4", "Press"),
+            membership("乙", "Hide_dzɔŋ2", "Hide"),
+            membership("丙", "Shout_o5", "Shout"),
+            membership("丙", "Laugh_ha1", "Laugh"),
+            membership("丁", "Shout_o5", "Shout"),
+            membership("丁", "Laugh_ha1", "Laugh"),
+            membership("戊", "Eat_ta3", "Eat"),
+        )
+
+        // 门槛 1：五点到齐，戊 成单点簇，平均轮廓系数 = (4×0.5 + 0) / 5 = 0.4。
+        // 门槛 2：只剩两对，平均轮廓系数 = 0.5 → 默认值应为 2。
+        assertEquals(2, ClusterEngine.defaultMinTags(profiles, memberships, maxMinTags = 2))
+        // 上限为 1 时只有门槛 1 可选。
+        assertEquals(1, ClusterEngine.defaultMinTags(profiles, memberships, maxMinTags = 1))
+        // 默认门槛与显式 analyze(minTags = 2) 的参与点一致。
+        val result = ClusterEngine.analyze(profiles, memberships, minTags = 2)
+        assertEquals(listOf("甲", "乙", "丙", "丁"), result.points.map { it.lang })
+        assertEquals(1, result.excludedSparse)
+    }
+
     private fun profile(lang: String, division: String, colorHex: String) =
         DialectProfile(lang, division, colorHex, sortKey = lang)
 

@@ -111,7 +111,9 @@ private data class ClusterComputation(
     val result: ClusterAnalysisResult,
     val edges: List<ClusterEdge>,
     /** 由快照算出的「最小義項數」稳定上限（不随本次 minTags 变化）。 */
-    val maxMinTags: Int
+    val maxMinTags: Int,
+    /** 本次实际采用的「最小義項數」：首次进入时可能是自动挑出的默认值。 */
+    val minTags: Int
 )
 
 /**
@@ -267,7 +269,8 @@ class SearchViewModel(
         if (clusterSnapshotLoaded) {
             // 结果缺失，或界面的方言筛选已经变了：用内存快照重新切片，不重读库
             if (state.result == null || filters != clusterFilters) {
-                applyFiltersAndRecompute(filters, state.minTags)
+                // 结果缺失（例如刚重置）时重新挑默认门槛；仅切换方言筛选则保留用户当前选择。
+                applyFiltersAndRecompute(filters, state.minTags, useDefaultMinTags = state.result == null)
             }
             return
         }
@@ -289,7 +292,12 @@ class SearchViewModel(
                 _clusterState.update { it.copy(loading = false, error = e.message ?: e.toString()) }
             }
             if (outcome.isSuccess) {
-                applyFiltersAndRecompute(_uiState.value.filters, _clusterState.value.minTags)
+                // 首次进入：最小义项数默认取轮廓系数最大的门槛。
+                applyFiltersAndRecompute(
+                    _uiState.value.filters,
+                    _clusterState.value.minTags,
+                    useDefaultMinTags = true
+                )
             }
         }
     }
@@ -324,8 +332,11 @@ class SearchViewModel(
     /**
      * 用快照重算聚類：`analyze` → 由 `computeSimilarity` 補出畫布連線。
      * 計算全部在 [computeDispatcher] 上；寫回前比對代際，避免慢結果覆蓋新參數。
+     *
+     * [useDefaultMinTags] 為 true 時（首次進入或結果缺失）不採用傳入值，改由
+     * [ClusterEngine.defaultMinTags] 在 1..上限 內挑輪廓係數最大的門檻作為預設。
      */
-    private fun recomputeClusters(minTags: Int) {
+    private fun recomputeClusters(minTags: Int, useDefaultMinTags: Boolean = false) {
         val profiles = clusterProfiles
         val memberships = clusterMemberships
         val seq = clusterSeq.incrementAndGet()
@@ -333,12 +344,19 @@ class SearchViewModel(
         viewModelScope.launch {
             val outcome = runCatching {
                 withContext(computeDispatcher) {
-                    val result = ClusterEngine.analyze(profiles, memberships, minTags)
+                    val maxMinTags = computeMaxMinTags(profiles, memberships)
+                    val effectiveMinTags = if (useDefaultMinTags) {
+                        ClusterEngine.defaultMinTags(profiles, memberships, maxMinTags)
+                    } else {
+                        minTags.coerceIn(1, maxMinTags)
+                    }
+                    val result = ClusterEngine.analyze(profiles, memberships, effectiveMinTags)
                     val similarity = computeSimilarity(memberships, result.points.map { it.lang })
                     ClusterComputation(
                         result = result,
                         edges = buildClusterEdges(similarity),
-                        maxMinTags = computeMaxMinTags(profiles, memberships)
+                        maxMinTags = maxMinTags,
+                        minTags = effectiveMinTags
                     )
                 }
             }
@@ -352,7 +370,7 @@ class SearchViewModel(
                         edges = computed.edges,
                         // 上限来自快照、与本次 minTags 无关，因此调高门槛后不会缩水；
                         // 这里再夹一次，保证 Slider 范围恒包含当前值。
-                        minTags = minTags.coerceIn(1, computed.maxMinTags),
+                        minTags = computed.minTags.coerceIn(1, computed.maxMinTags),
                         maxMinTags = computed.maxMinTags,
                         selectedK = null,
                         selectedLang = null
@@ -371,7 +389,11 @@ class SearchViewModel(
      *
      * 只筛内存快照、不重读库，因此切换筛选后仍复用同一份同源词资料。
      */
-    private fun applyFiltersAndRecompute(filters: DialectFilters, minTags: Int) {
+    private fun applyFiltersAndRecompute(
+        filters: DialectFilters,
+        minTags: Int,
+        useDefaultMinTags: Boolean
+    ) {
         val selected = filters.selected
         clusterProfiles = if (selected == null) {
             clusterAllProfiles
@@ -381,7 +403,7 @@ class SearchViewModel(
         clusterFilters = filters
         // 新切片的上限可能比旧门槛小（筛选把义项多的点排除了）；先夹一次再算，保证状态一致
         val maxMinTags = computeMaxMinTags(clusterProfiles, clusterMemberships)
-        recomputeClusters(minTags.coerceIn(1, maxMinTags))
+        recomputeClusters(minTags.coerceIn(1, maxMinTags), useDefaultMinTags)
     }
 
     /**

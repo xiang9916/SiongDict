@@ -238,19 +238,7 @@ private fun ClusterAnalysisBody(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(disp("顯示名稱"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        disp("點依分群聚攏；切換分類數只重新聚攏"),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        disp("單指旋轉 · 雙指縮放平移 · 雙擊復位"),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(disp("顯示名稱"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 Switch(checked = showLabels, onCheckedChange = { showLabels = it })
             }
             ClusterMap(

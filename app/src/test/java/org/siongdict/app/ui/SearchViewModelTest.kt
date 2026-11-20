@@ -300,11 +300,13 @@ class SearchViewModelTest {
         assertNull(state.error)
         val result = state.result
         assertEquals(6, result?.visibleDialects ?: -1)
-        // 戊 无同源词被排除；己 只有 1 个义项，在 minTags=1 时仍参与
-        assertEquals(5, result?.points?.size ?: -1)
+        // 戊 无同源词被排除；最小义项数默认取轮廓系数最大的门槛（此处为 2），
+        // 因此只有 1 个义项的 己 被排除。
+        assertEquals(4, result?.points?.size ?: -1)
         assertEquals(1, result?.excludedNoCognates ?: -1)
-        assertEquals(0, result?.excludedSparse ?: -1)
+        assertEquals(1, result?.excludedSparse ?: -1)
         assertEquals(2, state.maxMinTags)
+        assertEquals("首次进入的默认门槛由轮廓系数挑出", 2, state.minTags)
         // 只有组内两对相似度为正，跨群相似度 0 不成边
         assertEquals(2, state.edges.size)
         assertEquals(1, lexicon.profileLoads)
@@ -379,7 +381,9 @@ class SearchViewModelTest {
         advanceUntilIdle()
         vm.openClusterAnalysis()
         advanceUntilIdle()
-        assertEquals(5, vm.clusterState.value.result?.points?.size ?: -1)
+        // 默认门槛为 2（轮廓系数最大）：4 点参与，己 被排除。
+        assertEquals(2, vm.clusterState.value.minTags)
+        assertEquals(4, vm.clusterState.value.result?.points?.size ?: -1)
 
         val profileLoadsBefore = lexicon.profileLoads
         vm.setMinTags(2)

@@ -1533,6 +1533,30 @@ class DataLayerTest {
                 "sizes=${result.communities.clusters.map { it.size }}"
         )
 
+        // 最小义项数的默认值：由轮廓系数最大的门槛挑出，一并记进日志供文档回填。
+        val maxMinTags = memberships.groupBy { it.lang }
+            .values
+            .maxOfOrNull { rows -> rows.map { it.semanticTag }.toSet().size }
+            ?: 1
+        val defaultMinTags = ClusterEngine.defaultMinTags(profiles, memberships, maxMinTags)
+        Log.i("ClusterTest", "defaultMinTags=$defaultMinTags maxMinTags=$maxMinTags")
+        assertTrue(
+            "默认最小义项数应落在 1..$maxMinTags（实际 $defaultMinTags）",
+            defaultMinTags in 1..maxMinTags
+        )
+
+        // 默认门槛必须真的落在合法范围内，且真实库上不能退化成「只剩个位数点」。
+        val atDefault = ClusterEngine.analyze(profiles, memberships, minTags = defaultMinTags)
+        Log.i(
+            "ClusterTest",
+            "pointsAtDefault=" + atDefault.points.size + " k=" + atDefault.communities.k +
+                " Q=" + atDefault.modularity + " excludedSparse=" + atDefault.excludedSparse
+        )
+        assertTrue(
+            "默认门槛下的参与点应 >= 100（实际 " + atDefault.points.size + "）",
+            atDefault.points.size >= 100
+        )
+
         // 分群锚点布局：同类点应收紧到同一球面锚点附近，类内距应小于类间质心距。
         val labels = IntArray(result.points.size) { p ->
             result.communities.clusters.indexOfFirst { cluster -> p in cluster }
