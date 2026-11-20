@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.requery.android.database.sqlite.SQLiteDatabase as RequerySQLiteDatabase
+import kotlin.math.sqrt
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +19,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.siongdict.app.analysis.ClusterEngine
+import org.siongdict.app.analysis.groupedLayout3D
 import org.siongdict.app.data.LocalData
 import org.siongdict.app.data.ToneFormatter
 import org.siongdict.app.ui.SearchUiState
@@ -189,7 +191,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：2,771 条 / 202 组、本版新增的 48 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：2,772 条 / 203 组、本版新增的 50 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -228,9 +230,10 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            // 2026-11-20 用户裁决：Cold/Hit 第二轮收录 14 条（ADR-0005 附录十九），2,757/201 → 2,771/202。
-            assertEquals(2771, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(202, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            // 2026-11-20 用户裁决：Cold/Hit 第二轮收录 14 条（ADR-0005 附录十九），2,757/201 → 2,771/202；
+            // 同日第三轮 3 新增/1 移动/1 删除/1 合并（ADR-0005 附录二十），2,771/202 → 2,772/203。
+            assertEquals(2772, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(203, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -244,7 +247,7 @@ class DataLayerTest {
                 "Poking_ŋen3", "Poking_am5",
                 "Suck_tswin1", "Suck_tsʰwien3",
                 "Greedy_soŋ2",
-                "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tæ3", "Fat_dut8",
+                "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tiaŋ3", "Hit_taŋ3", "Hit_tæ3", "Fat_dut8",
                 "Shield_ʃwin3", "Rub_tsʰeu3", "Curse_fan3", "Curse_ʃwien3",
                 "Pile_tsut7", "Pile_tʃiuk7", "Hungry_la8", "ScoopRice_xa3",
                 "LookFor_nien2", "Hit_pʰiaŋ3"
@@ -527,13 +530,13 @@ class DataLayerTest {
                 members("Cold_liaŋ4").sorted()
             )
 
-            // Hit_tiaŋ5 收梗摄四等白读（带 -i- 介音，参考调类 5）；2026-11-20 第二轮 +3（9 条 9 点），
-            // 新晃凳寨 tʰiaŋ5 / 汝城 tiaŋ5 / 綏寧河口 ȵiʌŋ3 按「打」语素同一性并入，声母遂含 tʰ 与 ȵ（附录十九）。
-            assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5'"))
-            assertEquals(9, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5'"))
+            // Hit_tiaŋ5 收梗摄四等白读（带 -i- 介音，参考调类 5）；2026-11-20 第二轮 +3，同日第三轮移出江永桃川 liɛ3（改归 Hit_tiaŋ3），
+            // 现为 8 条 8 点；新晃凳寨 tʰiaŋ5 / 汝城 tiaŋ5 / 綏寧河口 ȵiʌŋ3 按「打」语素同一性并入，声母遂含 tʰ 与 ȵ（附录十九、二十）。
+            assertEquals(8, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5'"))
+            assertEquals(8, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5'"))
             assertEquals(
-                "Hit_tiaŋ5 调类分布（3/5 两调共 9 行）",
-                "3:2,5:7",
+                "Hit_tiaŋ5 调类分布（3/5 两调共 8 行）",
+                "3:1,5:7",
                 toneProfile("Hit_tiaŋ5")
             )
             assertEquals(
@@ -557,8 +560,8 @@ class DataLayerTest {
                 scalar("SELECT COUNT(*) FROM cognates WHERE (lang = '益陽' AND ipa = 'tʰiɔ̃1') OR (lang = '醴陵石亭' AND ipa = 'pʰiaŋ3')")
             )
             assertEquals(
-                "Hit_tiaŋ5 新增江永桃川/湘陰界頭鋪两条须在组内",
-                2,
+                "Hit_tiaŋ5 第三轮后仅湘陰界頭鋪一条命中（江永桃川 liɛ3 已移出至 Hit_tiaŋ3，附录二十）",
+                1,
                 scalar(
                     "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ5' AND (lang || '|' || ipa) IN " +
                         "('江永桃川|liɛ3','湘陰界頭鋪|tiã5')"
@@ -573,20 +576,19 @@ class DataLayerTest {
                 )
             )
             assertEquals(
-                "Hit_tiaŋ5 组参数（Hit/打，9 条 9 点）",
+                "Hit_tiaŋ5 组参数（Hit/打，8 条 8 点）",
                 1,
                 scalar(
                     "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Hit_tiaŋ5' " +
                         "AND semantic_tag = 'Hit' AND semantic_label = '打' " +
-                        "AND member_count = 9 AND dialect_count = 9"
+                        "AND member_count = 8 AND dialect_count = 8"
                 )
             )
             assertEquals(
-                "Hit_tiaŋ5 成员 (lang|ipa) 集合（9 条 9 点）",
+                "Hit_tiaŋ5 成员 (lang|ipa) 集合（8 条 8 点）",
                 listOf(
                     "冷水江鐸山|tiᴀ̃5a",
                     "新長沙|tiæ̃5",
-                    "江永桃川|liɛ3",
                     "湘潭易俗河|tiã5",
                     "湘陰界頭鋪|tiã5",
                     "長沙|tiã5",
@@ -749,6 +751,149 @@ class DataLayerTest {
                 members("Hit_pʰiaŋ3").sorted()
             )
 
+            // 2026-11-20 用户裁决第三轮：新建 Hit_tiaŋ3（打，2 条 2 点），收梗摄三四等白读 -iɛ/-eŋ 层：
+            // 江永桃川 liɛ3「~铁」自 Hit_tiaŋ5 移入、鐘山赤嶺 neŋ3「~蘸」新收；l-/n- 为同点自由变体（ADR-0005 附录二十）。
+            assertEquals(2, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ3'"))
+            assertEquals(2, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_tiaŋ3'"))
+            assertEquals(
+                "Hit_tiaŋ3 调类分布（上声 3 共 2 行）",
+                "3:2",
+                toneProfile("Hit_tiaŋ3")
+            )
+            assertEquals(
+                "Hit_tiaŋ3 声母须为 l-/n-（同点自由变体）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ3' AND initial NOT IN ('l','n')")
+            )
+            assertEquals(
+                "Hit_tiaŋ3 韵母须为 -iɛ/-eŋ（梗摄三四等白读）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ3' AND final NOT IN ('iɛ','eŋ')")
+            )
+            assertEquals(
+                "Hit_tiaŋ3 两条注释均不得为空（ADR-0005 硬规则）",
+                2,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_tiaŋ3' AND note IS NOT NULL AND trim(note) <> ''")
+            )
+            assertEquals(
+                "Hit_tiaŋ3 成员不得与既有组 (lang, ipa) 重叠",
+                0,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates c WHERE c.cognate_group = 'Hit_tiaŋ3' AND EXISTS (" +
+                        "SELECT 1 FROM cognates o WHERE o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Hit_tiaŋ3')"
+                )
+            )
+            assertEquals(
+                "Hit_tiaŋ3 组参数（Hit/打，2 条 2 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Hit_tiaŋ3' " +
+                        "AND semantic_tag = 'Hit' AND semantic_label = '打' " +
+                        "AND member_count = 2 AND dialect_count = 2"
+                )
+            )
+            assertEquals(
+                "Hit_tiaŋ3 成员 (lang|ipa) 集合（2 条 2 点）",
+                listOf(
+                    "江永桃川|liɛ3",
+                    "鐘山赤嶺|neŋ3",
+                ).sorted(),
+                members("Hit_tiaŋ3").sorted()
+            )
+
+            // 2026-11-20 用户裁决第三轮：新建 Hit_taŋ3（打，2 条 2 点），收梗摄开口 -ie/-i 层：
+            // 恭城直話 tie3「~踉跄」、江華老車 li3（注释「又pəu¹³」为又读标记，按同义项并入）；t-/l- 交替（ADR-0005 附录二十）。
+            assertEquals(2, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_taŋ3'"))
+            assertEquals(2, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Hit_taŋ3'"))
+            assertEquals(
+                "Hit_taŋ3 调类分布（上声 3 共 2 行）",
+                "3:2",
+                toneProfile("Hit_taŋ3")
+            )
+            assertEquals(
+                "Hit_taŋ3 声母须为 t-/l-（同类交替）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_taŋ3' AND initial NOT IN ('t','l')")
+            )
+            assertEquals(
+                "Hit_taŋ3 韵母须为 -ie/-i（梗摄开口白读）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_taŋ3' AND final NOT IN ('ie','i')")
+            )
+            assertEquals(
+                "Hit_taŋ3 两条注释均不得为空（ADR-0005 硬规则）",
+                2,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hit_taŋ3' AND note IS NOT NULL AND trim(note) <> ''")
+            )
+            assertEquals(
+                "Hit_taŋ3 成员不得与既有组 (lang, ipa) 重叠",
+                0,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates c WHERE c.cognate_group = 'Hit_taŋ3' AND EXISTS (" +
+                        "SELECT 1 FROM cognates o WHERE o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Hit_taŋ3')"
+                )
+            )
+            assertEquals(
+                "Hit_taŋ3 组参数（Hit/打，2 条 2 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Hit_taŋ3' " +
+                        "AND semantic_tag = 'Hit' AND semantic_label = '打' " +
+                        "AND member_count = 2 AND dialect_count = 2"
+                )
+            )
+            assertEquals(
+                "Hit_taŋ3 成员 (lang|ipa) 集合（2 条 2 点）",
+                listOf(
+                    "恭城直話|tie3",
+                    "江華老車|li3",
+                ).sorted(),
+                members("Hit_taŋ3").sorted()
+            )
+
+            // 2026-11-20 用户裁决第三轮：删除误收的 Hide_ma1（唯一成员 湘陰界頭鋪 ma1「摸」，摸≠躲藏），
+            // Hide 义项下音类组 8 → 7，组本身也从 cognate_groups 移除（ADR-0005 附录二十）。
+            assertEquals(
+                "Hide_ma1 组应已删除（cognates）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Hide_ma1'")
+            )
+            assertEquals(
+                "Hide_ma1 组应已删除（cognate_groups）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Hide_ma1'")
+            )
+            assertEquals("湘陰界頭鋪 ma1（id=627）应已删除", 0, scalar("SELECT COUNT(*) FROM cognates WHERE id = 627"))
+            assertEquals(
+                "Hide 义项下现挂 7 个音类组",
+                7,
+                scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates WHERE semantic_tag = 'Hide'")
+            )
+
+            // 2026-11-20 用户裁决第三轮：寧鄉大成橋 tsʰi5「~子:橡皮擦;蹭,擦」并入 Erase_dzut8（擦拭/捽），
+            // 重复行 id=1744 删除、保留 id=1734，组变成 21 条 20 点（ADR-0005 附录二十）。
+            assertEquals(21, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Erase_dzut8'"))
+            assertEquals(20, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Erase_dzut8'"))
+            assertEquals(
+                "寧鄉大成橋 tsʰi5 应保留在 Erase_dzut8",
+                1,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Erase_dzut8' AND lang = '寧鄉大成橋' AND ipa = 'tsʰi5'")
+            )
+            assertEquals(
+                "合并后保留 id=1734 的注释（橡皮擦 + 蹭,擦）",
+                1,
+                scalar("SELECT COUNT(*) FROM cognates WHERE id = 1734 AND note LIKE '%橡皮擦%' AND note LIKE '%蹭,擦%'")
+            )
+            assertEquals("重复行 id=1744 应已删除", 0, scalar("SELECT COUNT(*) FROM cognates WHERE id = 1744"))
+            assertEquals(
+                "Erase_dzut8 组参数（Erase/擦拭/捽，21 条 20 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Erase_dzut8' " +
+                        "AND semantic_tag = 'Erase' AND semantic_label = '擦拭/捽' " +
+                        "AND member_count = 21 AND dialect_count = 20"
+                )
+            )
             // 2026-11-13 用户裁决：长沙系「腯」12 条按 Fat（肥胖）同义项新建 Fat_dut8（音类 沒韻 *-ət），
             // 与 Fat_nap8 并列；注释原样保留「膩/厭煩」，属 ADR-0005 附录登记的语义例外。
             assertEquals(12, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Fat_dut8'"))
@@ -1111,11 +1256,12 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词成员关系端口（聚类相似度的最小输入）：全表 2,771 条、382 个方言点、202 组、137 个义项；
+     * 同源词成员关系端口（聚类相似度的最小输入）：全表 2,772 条、382 个方言点、203 组、137 个义项；
      * 每条 groupId 必须以 semanticTag + "_" 开头；抽查 Pile_tsut7（25 条）与 Curse_ʃwien3（8 条）；
      * 端口结果须与 cognates.db 直读的 (lang, groupId, semanticTag) 三元组完全一致。
      *
-     * 2,771 / 382 / 202 / 137 与两组条数是查 real 库（2026-11-20，ADR-0005 附录十九收录 14 条后）确认的版本事实。
+     * 2,772 / 382 / 203 / 137 与两组条数是查 real 库（2026-11-20，ADR-0005 附录十九收录 14 条、
+     * 附录二十第三轮 3 新增/1 移动/1 删除/1 合并之后）确认的版本事实。
      */
     @Test
     fun cognateMembershipsMatchDatabase() = runBlocking {
@@ -1123,9 +1269,9 @@ class DataLayerTest {
         d.maintenance.prepare()
         val memberships = d.cognateBook.memberships()
 
-        assertEquals("cognates 全表 2,771 条成员", 2771, memberships.size)
+        assertEquals("cognates 全表 2,772 条成员", 2772, memberships.size)
         assertEquals("成员应覆盖 382 个方言点", 382, memberships.map { it.lang }.distinct().size)
-        assertEquals("成员应覆盖 202 个音类组", 202, memberships.map { it.groupId }.distinct().size)
+        assertEquals("成员应覆盖 203 个音类组", 203, memberships.map { it.groupId }.distinct().size)
         assertEquals("成员应覆盖 137 个义项", 137, memberships.map { it.semanticTag }.distinct().size)
 
         assertTrue("lang 不得为空", memberships.all { it.lang.isNotBlank() })
@@ -1191,6 +1337,49 @@ class DataLayerTest {
                 "sizes=${result.communities.clusters.map { it.size }}"
         )
 
+        // 分群锚点布局：同类点应收紧到同一球面锚点附近，类内距应小于类间质心距。
+        val labels = IntArray(result.points.size) { p ->
+            result.communities.clusters.indexOfFirst { cluster -> p in cluster }
+        }
+        val grouped = groupedLayout3D(result.points, labels)
+        fun dist(a: Triple<Float, Float, Float>, b: Triple<Float, Float, Float>): Double {
+            val dx = (a.first - b.first).toDouble()
+            val dy = (a.second - b.second).toDouble()
+            val dz = (a.third - b.third).toDouble()
+            return sqrt(dx * dx + dy * dy + dz * dz)
+        }
+        var intraSum = 0.0
+        var intraCount = 0
+        result.communities.clusters.forEach { cluster ->
+            for (i in cluster.indices) {
+                for (j in i + 1 until cluster.size) {
+                    intraSum += dist(grouped[cluster[i]], grouped[cluster[j]])
+                    intraCount++
+                }
+            }
+        }
+        val centroids = result.communities.clusters.map { cluster ->
+            Triple(
+                cluster.map { grouped[it].first }.average().toFloat(),
+                cluster.map { grouped[it].second }.average().toFloat(),
+                cluster.map { grouped[it].third }.average().toFloat()
+            )
+        }
+        var betweenSum = 0.0
+        var betweenCount = 0
+        for (i in centroids.indices) {
+            for (j in i + 1 until centroids.size) {
+                betweenSum += dist(centroids[i], centroids[j])
+                betweenCount++
+            }
+        }
+        val meanIntra = if (intraCount > 0) intraSum / intraCount else 0.0
+        val meanBetween = if (betweenCount > 0) betweenSum / betweenCount else 0.0
+        Log.i(
+            "ClusterTest",
+            "groupedLayout3D intra=$meanIntra between=$meanBetween centroids=$centroids"
+        )
+
         assertTrue("参与聚类的点应 > 100（真实库 382 点）", result.points.size > 100)
         assertTrue(
             "自动类数应 >= 3（实际 k=${result.communities.k}，Q=${result.modularity}）",
@@ -1202,6 +1391,10 @@ class DataLayerTest {
         )
         assertEquals("optimalK 应等于社群分区类数", result.communities.k, result.optimalK)
         assertFalse("真实库不应标为稀疏", result.sparse)
+        assertTrue(
+            "分群锚点布局应把同类收紧：类内平均距 $meanIntra 应小于类间质心平均距 $meanBetween",
+            meanIntra < meanBetween
+        )
     }
 
 }

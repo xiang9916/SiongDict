@@ -1,7 +1,9 @@
 package org.siongdict.app.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -9,11 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,6 +44,8 @@ import org.siongdict.app.analysis.ClusterAnalysisResult
 import org.siongdict.app.analysis.ClusterPartition
 import org.siongdict.app.analysis.ClusterPoint
 import org.siongdict.app.analysis.DialectSimilarity
+import org.siongdict.app.analysis.groupedLayout3D
+import org.siongdict.app.analysis.lerpLayout
 import kotlin.math.sqrt
 
 /** 画布上的一条正相似边：两端是 ClusterAnalysisResult.points 的下标。 */
@@ -85,6 +91,9 @@ private const val MAX_LABELS = 80
 /** 点数不超过该值时标签全显示、不做去重叠。 */
 private const val ALL_LABELS_THRESHOLD = 40
 
+/** 布局过渡动画时长（毫秒）：切换分类数或重算后，点从旧位置滑向新分群。 */
+private const val LAYOUT_ANIMATION_MS = 700
+
 /**
  * 聚类三维力导向画布。
  *
@@ -118,6 +127,47 @@ internal fun ClusterMap(
 
     // 结果变化时重置视角，避免沿用上一批点的视窗。
     val points = result.points
+    // 分群锚点布局：类间按 Fibonacci 球面均布、类内保留力导向形状（见 groupedLayout3D）。
+    // 切换分类数或重算时用 700ms 过渡，点会明显「聚拢成团」而不是原地不动。
+    val labels = remember(points, partition) { clusterLabelsOf(points, partition) }
+    val targetLayout = remember(points, labels) {
+        groupedLayout3D(points, labels)
+            .mapIndexed { index, position -> points[index].lang to position }
+            .toMap()
+    }
+    var displayed by remember(points) {
+        mutableStateOf<Map<String, Triple<Float, Float, Float>>?>(null)
+    }
+    LaunchedEffect(targetLayout) {
+        val start = displayed ?: points.associate { it.lang to Triple(it.x, it.y, it.z) }
+        if (start == targetLayout) {
+            displayed = targetLayout
+            return@LaunchedEffect
+        }
+        animate(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = LAYOUT_ANIMATION_MS, easing = FastOutSlowInEasing),
+        ) { value, _ ->
+            displayed = lerpLayout(start, targetLayout, value)
+        }
+    }
+    val animatedPoints = remember(points, displayed) {
+        val layout = displayed
+        if (layout == null) {
+            points
+        } else {
+            points.map { point ->
+                val position = layout[point.lang]
+                if (position == null) {
+                    point
+                } else {
+                    point.copy(x = position.first, y = position.second, z = position.third)
+                }
+            }
+        }
+    }
+    val currentPointsState = rememberUpdatedState(animatedPoints)
     var yaw by remember(points) { mutableFloatStateOf(DEFAULT_YAW_DEG) }
     var pitch by remember(points) { mutableFloatStateOf(DEFAULT_PITCH_DEG) }
     var zoom by remember(points) { mutableFloatStateOf(1f) }
@@ -145,7 +195,6 @@ internal fun ClusterMap(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
     ) {
         Canvas(
             modifier = Modifier
@@ -225,7 +274,7 @@ internal fun ClusterMap(
                                 val canvas = Size(size.width.toFloat(), size.height.toFloat())
                                 var bestIndex = -1
                                 var bestDistance = Float.MAX_VALUE
-                                for ((index, point) in points.withIndex()) {
+                                for ((index, point) in currentPointsState.value.withIndex()) {
                                     val projected = project(point, canvas, yaw, pitch)
                                     val distance = (Offset(projected.x, projected.y) - down.position)
                                         .getDistance()
@@ -236,7 +285,7 @@ internal fun ClusterMap(
                                 }
                                 onSelect(
                                     if (bestIndex >= 0 && bestDistance <= tapRadius) {
-                                        points[bestIndex].lang
+                                        currentPointsState.value[bestIndex].lang
                                     } else {
                                         null
                                     }
@@ -246,17 +295,18 @@ internal fun ClusterMap(
                     }
                 }
         ) {
-            val count = points.size
+            val drawPoints = animatedPoints
+            val count = drawPoints.size
             if (count == 0) return@Canvas
             val canvas = size
-            val projected = points.map { project(it, canvas, yaw, pitch) }
+            val projected = drawPoints.map { project(it, canvas, yaw, pitch) }
             val baseRadius = sqrt(size.width * size.height / count)
                 .coerceIn(2.5.dp.toPx(), 6.dp.toPx())
             val radiusOf = { index: Int ->
                 baseRadius * depthRadiusScale(projected[index].depth)
             }
             val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()), 0f)
-            val selectedIndex = points.indexOfFirst { it.lang == selectedLang }
+            val selectedIndex = drawPoints.indexOfFirst { it.lang == selectedLang }
 
             // 1) 各类凸包：高亮类别填色更深、描边更实。
             partition?.clusters?.forEachIndexed { index, cluster ->
@@ -304,9 +354,9 @@ internal fun ClusterMap(
             }
 
             // 3) 节点：按深度从远到近画（近的盖住远的）。
-            val drawOrder = points.indices.sortedBy { projected[it].depth }
+            val drawOrder = drawPoints.indices.sortedBy { projected[it].depth }
             for (index in drawOrder) {
-                val point = points[index]
+                val point = drawPoints[index]
                 val center = Offset(projected[index].x, projected[index].y)
                 val nodeRadius = radiusOf(index)
                 val colors = parseColorSpec(point.colorHex).map { Color(it) }
@@ -341,7 +391,7 @@ internal fun ClusterMap(
 
             // 4) 标签。
             if (showLabels) {
-                val ordered = points.indices.sortedByDescending { projected[it].depth }
+                val ordered = drawPoints.indices.sortedByDescending { projected[it].depth }
                 val placed = mutableListOf<Rect>()
                 var drawn = 0
                 for (index in ordered) {
@@ -350,7 +400,7 @@ internal fun ClusterMap(
                         projected[index].x,
                         projected[index].y + radiusOf(index) + 2.dp.toPx(),
                     )
-                    val layout = textMeasurer.measure(points[index].lang, labelStyle)
+                    val layout = textMeasurer.measure(drawPoints[index].lang, labelStyle)
                     val rect = Rect(
                         offset = Offset(anchor.x - layout.size.width / 2f, anchor.y),
                         size = Size(layout.size.width.toFloat(), layout.size.height.toFloat()),
@@ -381,7 +431,7 @@ internal fun ClusterMap(
             if (selectedIndex >= 0) {
                 drawNodeLabel(
                     textMeasurer = textMeasurer,
-                    text = points[selectedIndex].lang,
+                    text = drawPoints[selectedIndex].lang,
                     anchor = Offset(
                         projected[selectedIndex].x,
                         projected[selectedIndex].y + radiusOf(selectedIndex) + 2.dp.toPx(),
@@ -391,6 +441,18 @@ internal fun ClusterMap(
             }
         }
     }
+}
+
+/** 把分区展开成按点序的类号；分区缺失或覆盖不全时返回 null（不聚拢）。 */
+private fun clusterLabelsOf(points: List<ClusterPoint>, partition: ClusterPartition?): IntArray? {
+    if (partition == null || partition.clusters.isEmpty()) return null
+    val labels = IntArray(points.size) { -1 }
+    partition.clusters.forEachIndexed { clusterIndex, members ->
+        for (index in members) {
+            if (index in labels.indices) labels[index] = clusterIndex
+        }
+    }
+    return if (labels.any { it < 0 }) null else labels
 }
 
 /** 在 anchor 处居中画一段文字（水平居中、纵向从 anchor.y 开始）。 */

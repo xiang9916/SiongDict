@@ -68,7 +68,7 @@ internal fun InfoDialog(
     if (showResetConfirm) {
         AlertDialog(
             onDismissRequest = { showResetConfirm = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.background,
             title = { Text(disp("重置資料庫")) },
             text = { Text(disp("將清除快取並從應用內重新載入資料庫，解決更新後的資料不一致問題。")) },
             confirmButton = {
@@ -88,7 +88,7 @@ internal fun InfoDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = MaterialTheme.colorScheme.background,
             tonalElevation = 0.dp,
             modifier = Modifier
                 .fillMaxWidth(0.95f)

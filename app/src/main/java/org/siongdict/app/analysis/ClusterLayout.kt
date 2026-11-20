@@ -210,3 +210,115 @@ private fun normalizeToUnitCube(
         }
     }
 }
+
+/** 分群锚点到立方体中心的距离；决定类间在画布上的分离度。 */
+private const val GROUP_ANCHOR_RADIUS = 0.35
+
+/** 类内相对形状的收缩比例；1 保持原形状，0 全部叠到锚点。 */
+private const val GROUP_SPREAD = 0.35
+
+/**
+ * 分群锚点布局（纯 Kotlin，禁止引用 android.*）。
+ *
+ * 与 [forceLayout3D] 分工：[forceLayout3D] 的坐标反映整体相似度结构，本函数把每一类搬到
+ * 独立的球面锚点上，并保留类内相对形状（按 [spread] 收缩），于是切换分类数时点会明显
+ * 「聚拢成团」，而不是原地不动。类号按升序去重后第 i 类锚点用 Fibonacci 球面均布
+ * （t = (i + 0.5) / n，φ = acos(1 − 2t)，θ = π(1 + √5)i），半径 [anchorRadius]，球心
+ * (0.5, 0.5, 0.5)，全程无随机数，同一输入永远同一输出。
+ *
+ * 边界：[labels] 为 null、长度不符、或只有一类时原样返回各点坐标（单类不塌缩到中心）；
+ * 输出经 [normalizeToUnitCube] 归一到 [0,1]³。
+ *
+ * @param points 已算好力导向坐标的点，输出顺序与之一致
+ * @param labels 每个点所属类号，长度须等于 points；null 表示不分组
+ * @param anchorRadius 锚点到立方体中心的距离
+ * @param spread 类内相对形状的收缩比例
+ */
+fun groupedLayout3D(
+    points: List<ClusterPoint>,
+    labels: IntArray?,
+    anchorRadius: Float = GROUP_ANCHOR_RADIUS.toFloat(),
+    spread: Float = GROUP_SPREAD.toFloat(),
+): List<Triple<Float, Float, Float>> {
+    if (points.isEmpty()) return emptyList()
+    val identity = points.map { Triple(it.x, it.y, it.z) }
+    if (labels == null || labels.size != points.size) return identity
+    val clusterIds = labels.toSortedSet().toList()
+    if (clusterIds.size <= 1) return identity
+
+    val clusterCount = clusterIds.size
+    val indexOf = HashMap<Int, Int>(clusterCount)
+    clusterIds.forEachIndexed { index, id -> indexOf[id] = index }
+
+    val anchors = Array(clusterCount) { index ->
+        val t = (index + 0.5) / clusterCount
+        val phi = acos(1.0 - 2.0 * t)
+        val theta = PI * (1.0 + sqrt(5.0)) * index
+        Triple(
+            0.5 + anchorRadius * (sin(phi) * cos(theta)).toFloat(),
+            0.5 + anchorRadius * (sin(phi) * sin(theta)).toFloat(),
+            0.5 + anchorRadius * cos(phi).toFloat(),
+        )
+    }
+
+    // 每类质心取力导向坐标，作为类内形状的原点。
+    val sumX = DoubleArray(clusterCount)
+    val sumY = DoubleArray(clusterCount)
+    val sumZ = DoubleArray(clusterCount)
+    val sizes = IntArray(clusterCount)
+    for (index in points.indices) {
+        val cluster = indexOf.getValue(labels[index])
+        sumX[cluster] += points[index].x.toDouble()
+        sumY[cluster] += points[index].y.toDouble()
+        sumZ[cluster] += points[index].z.toDouble()
+        sizes[cluster]++
+    }
+    val centroidX = DoubleArray(clusterCount) { sumX[it] / sizes[it] }
+    val centroidY = DoubleArray(clusterCount) { sumY[it] / sizes[it] }
+    val centroidZ = DoubleArray(clusterCount) { sumZ[it] / sizes[it] }
+
+    val xs = DoubleArray(points.size)
+    val ys = DoubleArray(points.size)
+    val zs = DoubleArray(points.size)
+    for (index in points.indices) {
+        val cluster = indexOf.getValue(labels[index])
+        val anchor = anchors[cluster]
+        xs[index] = (anchor.first + (points[index].x - centroidX[cluster]) * spread).toDouble()
+        ys[index] = (anchor.second + (points[index].y - centroidY[cluster]) * spread).toDouble()
+        zs[index] = (anchor.third + (points[index].z - centroidZ[cluster]) * spread).toDouble()
+    }
+    return normalizeToUnitCube(xs, ys, zs)
+}
+
+/**
+ * 两套布局之间的线性插值（纯 Kotlin），用于过渡动画。
+ *
+ * key 一般取方言点名；只在一侧出现的 key 取存在的那一侧，两侧都缺时给中心点。
+ * [t] 会夹到 [0, 1]。
+ */
+fun lerpLayout(
+    from: Map<String, Triple<Float, Float, Float>>,
+    to: Map<String, Triple<Float, Float, Float>>,
+    t: Float,
+): Map<String, Triple<Float, Float, Float>> {
+    val ratio = t.coerceIn(0f, 1f)
+    val keys = LinkedHashSet<String>(to.size + from.size)
+    keys.addAll(to.keys)
+    keys.addAll(from.keys)
+    val result = LinkedHashMap<String, Triple<Float, Float, Float>>(keys.size)
+    for (key in keys) {
+        val start = from[key]
+        val end = to[key]
+        result[key] = when {
+            start == null && end == null -> Triple(0.5f, 0.5f, 0.5f)
+            start == null -> end!!
+            end == null -> start
+            else -> Triple(
+                start.first + (end.first - start.first) * ratio,
+                start.second + (end.second - start.second) * ratio,
+                start.third + (end.third - start.third) * ratio,
+            )
+        }
+    }
+    return result
+}

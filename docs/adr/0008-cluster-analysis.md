@@ -5,7 +5,7 @@
 
 ## 背景
 
-同源词库现有 202 组、2,771 条人工条目（全部 `source='manual'`），覆盖 382 个方言点；字音库 `info` 表共 491 个方言点。这批条目的价值在跨方言对照：一个义项在哪些点有同源词、这些点彼此共享多少义项，直接反映词汇层面的亲疏。但既有的「搜同源」只能逐组看卡片，没有整体视图，判断「某片方言与哪片更近」只能人眼比对。
+同源词库现有 203 组、2,772 条人工条目（全部 `source='manual'`），覆盖 382 个方言点；字音库 `info` 表共 491 个方言点。这批条目的价值在跨方言对照：一个义项在哪些点有同源词、这些点彼此共享多少义项，直接反映词汇层面的亲疏。但既有的「搜同源」只能逐组看卡片，没有整体视图，判断「某片方言与哪片更近」只能人眼比对。
 
 需求是在 App 内新增「聚类分析」：把方言点按同源词相似度聚成若干类，并画成可交互的散点图。约束是离线、客户端计算、结果可解释、同一份资料每次结果一致（便于讨论与回归）。它因此挂在独立的「研究」入口下，而不是检索模式。
 
@@ -34,6 +34,7 @@
 - 200 轮迭代：O(n²) 斥力（∝ 1/d²）+ 每点连向正相似度最高的 8 个邻点作弹簧（权重 s = 1 − 2d、自然长度 0.32）+ 向立方体中心 (0.5, 0.5, 0.5) 的向心力；步长随轮次冷却，最后按三轴最大跨度等比缩放到 [0,1]³。
 - 全程不用随机数：同一份距离矩阵永远得到同一组坐标，便于截图对比与问题复现。
 - 布局只决定「画在哪里」，不参与聚类；聚类结论由社群偵測（或用户指定的 k）决定。
+- 分群锚点布局：聚类给出类号后，把同类点从纯力导向位置收缩到 Fibonacci 球面锚点附近（`groupedLayout3D(points, labels)`：类号升序去重后按 `anchorRadius = 0.35` 均布锚点、类内按质心收缩 `spread = 0.35`，再归一化到 [0,1]³）；类号顺序固定，同一分区必得同一布局，类内相对形状保留力导向结果。切换分类数时画布用 700ms 补间（`lerpLayout(from, to, t)`，缺一侧的点按存在侧取值）把点从旧坐标聚拢到新坐标，只重算分区与布局、不重跑聚类。
 
 ### 4. 三维可视化：透视投影、手势与标签
 
@@ -42,12 +43,13 @@
 - 手势：单指拖动 = 旋转（左右改 yaw、上下改 pitch，pitch 夹在 ±80°）；双指 = 缩放 + 平移；双击复位到默认视角与 1 倍缩放。手势只改相机参数，不重算布局、不重跑聚类。
 - 标签默认显示：可见点 ≤ 40 时全显；否则按深度从近到远排序后贪心放置，与已放置标签的屏幕矩形相交就跳过，上限 80 个——保证近处标签不被远处糊住。选中点始终显示标签。
 - 投影是纯函数（`ui/ClusterProjection.kt`，6 项 JVM 测试覆盖旋转、透视、边界与俯仰夹角），Compose 画布只负责绘制；因此同一资料、同一视角的截图可以逐像素复现。
-- 为什么还要「确定性」：三维图一旦带随机初始旋转或抖动，讨论时没法指着同一张图说话；这里所有相机参数都由手势与常量决定，没有随机数。
+- 聚拢动画：切换分类数（或重算后布局变化）时，`ClusterMap` 保留上一帧坐标，用 `animate` + `tween(700ms, FastOutSlowInEasing)` 驱动 `lerpLayout` 插值，点、连线、凸包、标签全部用插值后的坐标绘制；动画只改绘制坐标，不触发重新聚类，因此滑桿拖动时不会卡在计算上。
+- 为什么还要「确定性」：三维图一旦带随机初始旋转或抖动，讨论时没法指着同一张图说话；这里所有相机参数、锚点、初始分布与插值终点都由手势与常量决定，没有随机数。
 
 ### 5. 全部在客户端计算，数据层只加两个只读查询
 
 - `Lexicon.dialectProfiles()`：读 `info` 表的 簡稱／音典分區／音典顏色／音典排序，按 (音典排序, 簡稱) 排序，共 491 点；空白簡稱跳过，分区与颜色允许空串，与「方言筛选树」共用同一次 generation 缓存。
-- `CognateBook.memberships()`：读 `cognates` 的 lang／cognate_group／semantic_tag，共 2,771 条；同源词库缺失时返回空列表，与「搜同源」一致地降级。
+- `CognateBook.memberships()`：读 `cognates` 的 lang／cognate_group／semantic_tag，共 2,772 条；同源词库缺失时返回空列表，与「搜同源」一致地降级。
 - ViewModel 首次打开时读一次、存成内存快照；调整分类数只切换分区，调整最小义项数只用快照重算，均不再读库；重置数据库时作废快照并关闭对话框。慢结果用代际编号（`clusterSeq`）守卫，不覆盖新参数的结果。
 - 复杂度 O(n² + 成员条数)，n 为参与聚类的点数（有同源词的点 382）；单次计算在手机端是毫秒到百毫秒级。
 
@@ -67,11 +69,11 @@
 
 ## 数字
 
-- 同源词：202 组 / 2,771 条（全部 manual），覆盖 382 个方言点、137 个义项。
+- 同源词：203 组 / 2,772 条（全部 manual），覆盖 382 个方言点、137 个义项。
 - 方言点：491 个（`info` 表）。
 - 默认参数（`minTags = 1`）：382 点参与、109 点无同源词被排除、0 点因义项不足被排除。
 - 义项数分布：1 个义项 81 点、2 个 67 点、3 个 27 点、4 个 30 点、5 个 25 点……最多 66 个（道縣梅花）。
-- 分类数：自動值 = 社群数（2026-11-20 实测（382 点）：4 类、模组度 Q ≈ 0.284，类别规模 178/115/42/47）；手动可选 k = 2..min(10, n−1)；最小义项数滑桿范围 1..min(10, 快照中最大义项数)。
+- 分类数：自動值 = 社群数（2026-11-20 仪器化实测：382 点、**4 类**、模组度 **Q ≈ 0.2841**、类别规模 **177/115/42/48**；数据为 2,772 条/203 组入库后，`clusterAnalysisUsesCommunityDetection` 的 `Log.i("ClusterTest", …)` 日志可复核）；手动可选 k = 2..min(10, n−1)；最小义项数滑桿范围 1..min(10, 快照中最大义项数)。
 - 稀疏阈值：模组度 < 0.15。
 - 布局参数：三维，200 轮、斥力系数 0.0025、每点 8 邻弹簧（0.8，自然长度 0.32）、向心 0.02、Fibonacci 球面初值（半径 0.4）、归一化到 [0,1]³。
 - 投影参数：相机距离 2.8、焦距 1.6、默认 yaw −24° / pitch 18°、pitch 限 ±80°、缩放 0.6–4。
@@ -100,5 +102,5 @@
 - 算法：`app/src/main/java/org/siongdict/app/analysis/` 六个纯 Kotlin 文件——`ClusterModels.kt`、`Similarity.kt`、`HierarchicalClustering.kt`、`CommunityDetection.kt`（确定性 Louvain）、`ClusterLayout.kt`、`ClusterEngine.kt`，不依赖 Android，可直接 JVM 测试。
 - 界面：`ui/ResearchDialog.kt`（「研究」一级入口）、`ui/ClusterAnalysisDialog.kt`（摘要、参数、图例、选中点详情）、`ui/ClusterMap.kt`（透视投影画布、凸包、连线、旋转／缩放／平移手势、标签、点选）、`ui/ClusterProjection.kt`（3D 透视投影纯函数）、`ui/ClusterColors.kt`（调色盘与颜色解析）、`ui/SearchViewModel.kt`（快照、筛选切片、代际守卫）、`ui/SearchScreen.kt`（入口装配）。
 - 数据：`data/Models.kt`（`DialectProfile`、`CognateMembership`）、`Lexicon.dialectProfiles()`、`CognateBook.memberships()`。
-- 测试：JVM 共 53 项（聚类相关：`SimilarityTest` 3、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterLayoutTest` 1、`ClusterProjectionTest` 6、`ClusterEngineTest` 2、`ClusterColorsTest` 2、`SearchViewModelTest` 聚类 3）；仪器化共 23 项（数据层 16 + 界面 7），其中 `clusterAnalysisUsesCommunityDetection` 断言真实库自动类数 ≥ 3 且模组度 > 0.2。最终 JVM 53/53、仪器化 23/23。
+- 测试：JVM 共 58 项（聚类相关：`SimilarityTest` 3、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterLayoutTest` 6（力导向、分群锚点、布局补间）、`ClusterProjectionTest` 6、`ClusterEngineTest` 2、`ClusterColorsTest` 2、`SearchViewModelTest` 聚类 3）；仪器化共 23 项（数据层 16 + 界面 7），其中 `clusterAnalysisUsesCommunityDetection` 断言真实库自动类数 ≥ 3 且模组度 > 0.2，并断言 `groupedLayout3D` 类内平均距离小于类间质心距离、用 `Log.i("ClusterTest", …)` 打印真实 k／Q／类别规模与类质心。最终 JVM 58/58、仪器化 23/23。
 - 验证：`./gradlew :app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`、`assembleDebug` 全绿；真实资料下 491 点、默认排除 109 点，摘要与图例数字自洽。

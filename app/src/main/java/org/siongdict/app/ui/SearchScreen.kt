@@ -27,11 +27,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -196,7 +198,11 @@ private fun SearchBar(
         },
         singleLine = true,
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        colors = OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedBorderColor = MaterialTheme.colorScheme.primary
+        )
     )
 }
 
@@ -209,10 +215,25 @@ private fun ModeSelector(selected: SearchMode, onSelect: (SearchMode) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         SearchMode.entries.forEach { mode ->
+            val isSelected = selected == mode
             FilterChip(
-                selected = selected == mode,
+                selected = isSelected,
                 onClick = { onSelect(mode) },
-                label = { Text(disp(mode.label)) }
+                label = { Text(disp(mode.label)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Color.Transparent,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedContainerColor = SiongDarkRed,
+                    selectedLabelColor = Color.White
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = isSelected,
+                    borderColor = MaterialTheme.colorScheme.outline,
+                    selectedBorderColor = SiongDarkRed,
+                    borderWidth = 1.dp,
+                    selectedBorderWidth = 1.dp
+                )
             )
         }
     }
