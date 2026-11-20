@@ -71,4 +71,4 @@
 - 纯函数：`analysis/MapModels.kt`（`LonLat`、`ProvinceShape` 多环多边形、`MapSite`、`parseLonLat`）、`analysis/MapProjection.kt`（`mercatorY`／`inverseMercatorY`、`project`／`unproject`、`fitTransform`）、`analysis/Voronoi.kt`（`voronoiCells`、`PlaneRect`、`PlanePoint`）。
 - 数据与界面：`data/MapAssets.kt`（读 assets、缓存、降级）、`ui/ClusterMapScreen.kt`（全屏页、标题、两个开关、图例、选中详情、返回）、`ui/GeoMapView.kt`（Compose Canvas：省界底图 + 泰森多边形 + 站点 + 标签、手势与点选）。
 - 测试：地图相关 JVM 15 项——`MapProjectionTest` 6（Mercator 正反解、project/unproject 往返、fitTransform 缩放与置中、空底图退化）、`VoronoiTest` 6（裁剪、重合站点、单站点、退化为空）、`GeoCoordinateTest` 3（经纬度解析与范围校验）；仪器化 26 项中聚類用例顺带断言每个点经纬度落在底图 bbox 内（100.2–119.7／21.5–33.5）。
-- 本 ADR 只加一个离线展示页，不改变任何数据与聚类算法；发布版本由 `AGENTS.md` §6 的版本表决定。
+- 发布：0.5-alpha.5 / versionCode 53（2026-11-20）对外发布，地图展示页随该版上线。

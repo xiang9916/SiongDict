@@ -117,3 +117,4 @@
 - 验证：`./gradlew :app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`、`assembleDebug` 全绿；真实资料下 491 点、默认排除 108 点，摘要与图例数字自洽。
 - 发布：0.5-alpha.3 / versionCode 51（2026-11-20）对外发布，本 ADR 的社群偵测、三维可视化与聚拢动画随该版上线。
 - 发布：0.5-alpha.4 / versionCode 52（2026-11-20）对外发布，本 ADR 的全屏页与默认最小义项数随该版上线。
+- 发布：0.5-alpha.5 / versionCode 53（2026-11-20）对外发布，本 ADR 的候选分區搜索、自动分类数／最小义项数与摘要精简随该版上线。
