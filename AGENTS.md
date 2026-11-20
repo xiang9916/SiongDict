@@ -235,7 +235,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 - **范围**：先按**当地方言筛选树**切片（`selected == null` 全收，否则 `leafKey(division) ∈ selected`，与检索共用同一套前三段分区叶子键）；再排除没有同源词的点与义项数低于「最小义项数」的点。全屏页摘要只留一行「模組度 · 輪廓係數」（旧的三行摘要已删除，明细看日志与图例）。2026-11-20 实测：491 点中默认排除 108 个无同源词的点，剩 383 点。
 - **算法**（`analysis/` 十个纯 Kotlin 文件）：义项 = `semantic_tag`；共同义项下共享至少一个 `cognate_group` 记 +1、都收录但无共享记 −1、缺义项不计；s = 总分／(|T| + λ)，λ = 2（收缩平均，s ∈ (−1,1)，共同义项越多同一比例越可信），距离 d = (1−s)/2（无共同义项时 d = 0.5）；**「自動」分群不再赌单一算法，而是先造候选池再挑**：候选 = UPGMA 各 k（2..min(10, n−1)）的分区 + 确定性 Louvain 在 γ 网格 0.25–4（10 档，边权 = 相似度、≤3 层、模组度增益 <1e-9 停）上的分区，并对每个 k 再二分 γ 6 步细化；**每个 k 只保留轮廓系数最高的候选**（平手优先 Louvain、再取小 γ），候选池按 k 升序。「自動」值 = 候选池里**每簇都不小于 `max(2, ⌈5%n⌉)`** 的候选中轮廓系数最高者（平手小 k → Louvain → 小 γ，`PartitionSearch`）；稀疏判定改为**轮廓系数 < 0.10**（`SPARSE_SILHOUETTE`），**模组度降为对照指标（`modularity`）**——按 Q 最大一定退化成 k=2 的粗切，不能用来选分类数。最小义项数的默认值也由数据定：`ClusterEngine.defaultMinTags()` 在 1..上限 内取「自动分群」轮廓系数最大的门槛，且该门槛须保留至少 50% 有同源词的点（`MIN_DEFAULT_COVERAGE`），否则轮廓系数会一路挑到只剩 10 点的门槛；该搜索只跑粗候选池（不做每 k 的 γ 二分，实测两者结果一致，二分会让开启延迟从约 6.5 秒增至约 20.5 秒）。**2026-11-20 仪器化实测（唯一可信值）**：门槛 1 时 383 点、自动 k=6、类别规模 61/108/75/62/31/46、轮廓 0.1587、Q ≈ 0.2723（仅对照）；默认门槛 4 时 209/383 点、自动 k=2、规模 178/31、轮廓 0.1972、Q ≈ 0.0997（仅对照），义项不足排除 174 点。布局改为三维力导向（Fibonacci 球面初值、归一化到单位立方体），画布做透视投影，支持单指旋转/双指缩放平移/双击复位；标签默认显示（≤40 点全显，否则按深度去重叠、上限 80）。**分群锚点布局 + 700ms 过渡动画**：先按当前分区的类号把同类点收缩到 Fibonacci 球面锚点附近（类号升序定锚点，类内按质心收缩、`spread = 0.35`，`anchorRadius = 0.35`），再由画布以 700 毫秒补间把点从旧坐标聚拢到新坐标——切换分类数时只重算分区与布局、不重跑聚类，聚拢过程可见。同一份资料坐标恒定。
 - **交互**：分类数滑桿只换分区、不重跑（`selectedK`，可回「自动」）；最小义项数滑桿松手后按快照重算，上限固定为快照中最大义项数（夹在 1..10），调高门槛不会缩水。**最小义项数的默认值由数据决定**（规则见上「算法」段）；2026-11-20 实测默认门槛 4（209/383 点，义项不足排除 174 点）。点节点看该点义项／条目数并高亮所属类别；画布支持单指旋转、双指 0.6–4 倍缩放与平移、双击复位视角。
-- **地图展示**：全屏页「顯示名稱」下方的「在地圖展示」按钮（`cluster_map_open`）→ `ClusterMapScreen`（`cluster_map_screen`），返回键先退地图、再退聚类页。底图是离线派生的 `assets/maps/provinces.json`（20 省／44 环／3,253 顶点，61,756 B，MCPDict `china.json` 裁切简化，MIT，见 ADR-0010），Web Mercator 投影后按站点经纬度画泰森多边形（`Voronoi.kt`，半平面裁剪 O(n²)）与站点点位，只画当前参与聚类的点（默认门槛 4 时 209 点；手动把门槛调到 1 时 383 点）。可切「標籤」与「多邊形」开关、点选站点看详情，手势缩放平移；全程离线，无图砖、无地图库。底图缺失时只画站点并提示「底圖資產缺失，僅顯示站點位置。」。
+- **地图展示**：全屏页「顯示名稱」下方的「在地圖展示」按钮（`cluster_map_open`）→ `ClusterMapScreen`（`cluster_map_screen`），返回键先退地图、再退聚类页。底图是离线派生的 `assets/maps/provinces.json`（20 省／44 环／3,253 顶点，61,756 B，MCPDict `china.json` 裁切简化，MIT，见 ADR-0010），Web Mercator 投影后按站点经纬度画泰森多边形（`Voronoi.kt`，半平面裁剪 O(n²)）与站点点位，只画当前参与聚类的点（默认门槛 4 时 209 点；手动把门槛调到 1 时 383 点）。可切「標籤」与「多邊形」开关、点选站点看详情，手势缩放平移；全程离线，无图砖、无地图库。底图缺失时只画站点并提示「底圖資產缺失，僅顯示站點位置。」。投影时经度与 Mercator 纵坐标统一换算成弧度、共用同一个 `scale`（曾因「度／弧度」混用把整张图压成约 1050×12.75 px 的横带、泰森多边形退化成竖条，2026-11-20 修正，见 ADR-0010「投影单位与修正记录」）；泰森多边形只铺在地图内容框 `contentBounds()` 内并 `clipRect`，不铺满整个画布。
 - **配色**：节点用音典顏色（`#RRGGBB`／`#AARRGGBB`／逗号双色渐变），类别用固定 10 色调色盘（凸包填色与图例），两套不混用。
 - **复杂度**：O(n² + 成员条数)，n ≤ 383（有同源词的点），手机端毫秒到百毫秒级（候选池把聚类跑多次，仍是同阶）。
 - 决策与取舍见 `docs/adr/0008-cluster-analysis.md`。
@@ -288,20 +288,21 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-26 项仪器化测试（数据层 17 + 界面 9），需要模拟器或真机：
+27 项仪器化测试（数据层 18 + 界面 9），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 26/26
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 27/27
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
-- 另有 87 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、候选分區搜索 7、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、Mercator 投影 6、泰森多邊形 6、經緯度 3、调色盘与方言树、版本比较与更新解析）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
+- 另有 89 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、候选分區搜索 7、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、Mercator 投影 8（含两轴同单位、不同纬度不塌陷、等比缩放的投影回归锁）、泰森多邊形 6、經緯度 3、调色盘与方言树、版本比较与更新解析）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
 - 本次（0.5-alpha.2）新增 3 项仪器化测试（`dialectProfilesLoadFromInfo` 方言画像、`cognateMembershipsMatchDatabase` 同源词成员、`researchOpensClusterAnalysis` 研究入口）与 14 项 JVM 测试（相似度 3、层次聚类 3、布局 1、聚类引擎 2、调色盘 2、ViewModel 聚类 3）。
+- `mapProjectionKeepsGeographicProportion` 用真实 491 点 + 真实底图跑 `fitTransform(1074×1000, padding 12)`，锁地图投影单位：内容高宽比 = 两轴弧度跨度比（误差 < 1%）、`contentHeight > 500 px`（修正前约 12.75 px）、投影点不共线（y 标准差 > contentHeight 的 10%、不同 y 值 > 100），Voronoi 单元格全部落在 `contentBounds()` 内且数量等于站点数。
 - `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
 - `clusterAnalysisUsesCommunityDetection` 用真实库跑两遍聚类（门槛 1 与默认门槛）：断言参与点数、自动类数 ≥3、`optimalK`／`optimalSilhouette` 与自动分区一致、**轮廓系数 > 0.10 且未标稀疏**、模组度落在 −0.5..1、**每个簇都不小于 `minClusterSize(n)`**、候选池按 k 升序且轮廓系数在 −1..1、每个点都带底图范围内的经纬度（100.2–119.7／21.5–33.5）、默认门槛为 4 且默认门槛下是 k=2（这是「可接受候选中轮廓最高」的正常结果，不是退化）、`groupedLayout3D` 类内平均距离小于类间质心距离。真实 k／轮廓系数／Q／类别规模／完整候选表／默认门槛结果全部用 `Log.i("ClusterTest", …)` 打印，跑完用 `adb logcat -d -s ClusterTest` 核对（2026-11-20 实测：门槛 1 → k=6、轮廓 0.1587；默认门槛 4 → k=2、轮廓 0.1972）。
 - 启动时会自动检查更新（`data/UpdateChecker.kt`，见 ADR-0009）：GET GitHub `releases/latest`，8 秒超时；失败静默、不阻断启动、不自动下载安装；结果缓存到 SharedPreferences，有新版本时「關於」图标旋转并在面板提示，点按打开 Release 页。手动「檢查更新」走同一路径。

@@ -12,7 +12,18 @@ import kotlin.math.tan
  *
  * 只做等距圓柱的縱向拉伸（Web Mercator），不引任何地圖庫：
  * 湖南省域尺度下與線上地圖的視覺位置一致，且完全離線。
+ *
+ * **單位約定（重要）**：經度與 Mercator 縱座標一律用**弧度**作畫布換算，
+ * 兩軸共用同一個 [MapTransform.scale]，內容才不會被拉伸變形。
+ * 歷史上這裡曾讓 X 用「度」、Y 用「弧度」，兩者相差 180/π ≈ 57.3 倍，
+ * 結果整張地圖被壓成十幾像素高的橫帶、泰森多邊形退化成滿屏豎條（2026-11-20 修正）。
  */
+
+/** 度 → 弧度。 */
+private const val DEG_TO_RAD = PI / 180.0
+
+/** 弧度 → 度。 */
+private const val RAD_TO_DEG = 180.0 / PI
 
 /** Web Mercator 縱座標（單位為弧度）；緯度先夾在 ±85°，避免 tan 爆炸。 */
 internal fun mercatorY(lat: Double): Double {
@@ -27,8 +38,8 @@ internal fun inverseMercatorY(y: Double): Double =
 /**
  * 經緯度 → 畫布像素的仿射變換。
  *
- * [scale] 是「每弧度（經度）對應的像素數」；X 用經度、Y 用 Mercator 縱座標，
- * 兩軸共用同一 [scale] 保證不變形；內容在畫布中置中。
+ * [scale] 是「每弧度對應的像素數」；X 用經度（先轉弧度）、Y 用 Mercator 縱座標（本身就是弧度），
+ * 兩軸共用同一 [scale] 保證不變形；內容在畫布中置中，尺寸為 [contentWidth] × [contentHeight]。
  */
 data class MapTransform(
     val minLon: Double,
@@ -38,17 +49,23 @@ data class MapTransform(
     val scale: Float,
     val offsetX: Float,
     val offsetY: Float,
+    val contentWidth: Float,
+    val contentHeight: Float,
 ) {
+    /** 地圖內容在畫布上的外接矩形（泰森多邊形的裁剪邊界）。 */
+    fun contentBounds(): PlaneRect =
+        PlaneRect(offsetX, offsetY, offsetX + contentWidth, offsetY + contentHeight)
+
     /** 經緯度 → 畫布座標（x 向右、y 向下）。 */
     fun project(lon: Double, lat: Double): Pair<Float, Float> {
-        val x = offsetX + ((lon - minLon) * scale).toFloat()
+        val x = offsetX + (((lon - minLon) * DEG_TO_RAD) * scale).toFloat()
         val y = offsetY + ((maxMercatorY - mercatorY(lat)) * scale).toFloat()
         return x to y
     }
 
     /** 畫布座標 → 經緯度（供點擊命中與手勢換算）。 */
     fun unproject(x: Float, y: Float): LonLat {
-        val lon = minLon + (x - offsetX) / scale
+        val lon = minLon + (x - offsetX) / scale * RAD_TO_DEG
         val mercator = maxMercatorY - (y - offsetY) / scale
         return LonLat(lon, inverseMercatorY(mercator))
     }
@@ -95,12 +112,16 @@ internal fun fitTransform(
         minMercator = mercatorY(-0.05)
         maxMercator = mercatorY(0.05)
     }
-    val lonSpan = (maxLon - minLon).coerceAtLeast(1e-6)
-    val mercatorSpan = (maxMercator - minMercator).coerceAtLeast(1e-6)
+    val lonSpanRad = ((maxLon - minLon) * DEG_TO_RAD).coerceAtLeast(1e-9)
+    val mercatorSpan = (maxMercator - minMercator).coerceAtLeast(1e-9)
     val availableWidth = (width - 2f * padding).coerceAtLeast(1f)
     val availableHeight = (height - 2f * padding).coerceAtLeast(1f)
-    val scale = min(availableWidth / lonSpan.toFloat(), availableHeight / mercatorSpan.toFloat())
-    val contentWidth = lonSpan.toFloat() * scale
+    // 兩軸同單位（弧度）取同一 scale，保證內容不變形。
+    val scale = min(
+        availableWidth / lonSpanRad.toFloat(),
+        availableHeight / mercatorSpan.toFloat(),
+    )
+    val contentWidth = lonSpanRad.toFloat() * scale
     val contentHeight = mercatorSpan.toFloat() * scale
     return MapTransform(
         minLon = minLon,
@@ -110,5 +131,7 @@ internal fun fitTransform(
         scale = scale,
         offsetX = (width - contentWidth) / 2f,
         offsetY = (height - contentHeight) / 2f,
+        contentWidth = contentWidth,
+        contentHeight = contentHeight,
     )
 }

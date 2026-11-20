@@ -21,7 +21,7 @@
 ### 2. 投影：Web Mercator + 等比置中
 
 - 纵坐标用 Web Mercator：`mercatorY(lat) = ln(tan(π/4 + lat·π/360))`，纬度先夹在 ±85° 避免 tan 爆炸；`inverseMercatorY` 供反解。
-- `analysis/MapProjection.kt` 的 `MapTransform` 保存 (minLon, maxLon, minMercatorY, maxMercatorY, scale, offsetX, offsetY)：`project(lon, lat)` → 画布像素（x 向右、y 向下），`unproject(x, y)` → 经纬度（供点选命中与手势换算）。X 用经度、Y 用 Mercator 纵坐标，**两轴共用同一 scale**，因此不会横向或纵向拉伸变形。
+- `analysis/MapProjection.kt` 的 `MapTransform` 保存 (minLon, maxLon, minMercatorY, maxMercatorY, scale, offsetX, offsetY, contentWidth, contentHeight)：`project(lon, lat)` → 画布像素（x 向右、y 向下），`unproject(x, y)` → 经纬度（供点选命中与手势换算）。**X 用经度 × π/180（弧度）、Y 用 Mercator 纵坐标（本身即弧度），两轴同单位、共用同一 scale**，因此不会横向或纵向拉伸变形；`contentBounds()` 给出内容在画布上的外接矩形，供泰森多边形裁剪。
 - `fitTransform(sites, shapes, width, height, padding = 12dp)` 依底图外接矩形建立变换（底图优先，保证整张地图可见；底图缺失时退回站点范围并至少留 0.05° 边距，避免单点时除零），等比缩放 `scale = min(可用宽/经度跨度, 可用高/Mercator 跨度)`，内容在画布内置中。
 
 ### 3. 泰森多边形：半平面裁剪，O(n²)
@@ -49,6 +49,14 @@
 
 - 投影、视图变换、泰森多边形全是纯函数，无随机数；同一份分区、同一画布尺寸得到同一张图，截图可复现。手势只改视图参数，不重算聚类。
 
+## 投影单位与修正记录（2026-11-20）
+
+- **病因**：`project()` 的 X 轴用「经度（度）」、Y 轴用 `mercatorY` 返回的「弧度」，两者却共用一个 `scale`。度与弧度相差 180/π ≈ **57.3 倍**，纵向因此被压扁 57.3 倍。
+- **后果**：真实 491 个方言点在 1074×1000 画布上只得到约 **1050 × 12.75 px** 的横带，投影点几乎全部落在同一行（y 标准差不到 1 px、不同 y 值极少），泰森多边形退化成贯穿画布的竖条；App 里「在地圖展示」实际上不可读。
+- **修法**：经度先 `× π/180` 换成弧度，与 Mercator 纵坐标同单位、共用同一 `scale`；`MapTransform` 显式记录 `contentWidth`／`contentHeight` 并提供 `contentBounds()`；`GeoMapView` 的泰森多边形改为裁剪到 `contentBounds()` 并 `clipRect`，不再铺满整个画布。
+- **修正后真实尺寸**：1074×1000 画布、padding 12dp 时内容约 **1050 × 730.5 px**（宽高比 1.437）；491 个站点投影后 y 标准差约 **97.6 px**（contentHeight 的 0.134 倍），不同 y 值 490 个——点不再共线。
+- **回归锁**：JVM `MapProjectionTest` 的 `projectedAxesUseSameScale`（两轴每弧度像素数一致）、`threeSitesOnDifferentLatitudesDoNotCollapse`（不同纬度纵向跨度 > 100 px）、`fitTransformUsesShapeBoundsAndKeepsAspectRatio`（内容宽高比 = 弧度跨度比、contentHeight 不能是横带）；仪器化 `DataLayerTest.mapProjectionKeepsGeographicProportion`（真实 491 点 + 真实底图：内容高宽比误差 < 1%、contentHeight > 500 px、点不共线、Voronoi 单元格落在 contentBounds 内）。改动 `MapProjection` 的单位约定时这几条会先红。
+
 ## 考虑过的方案
 
 - **线上地图瓦片（Google／高德／OSM）**：需要联网、需要 key 或受配额与授权限制，违反「除更新检查外离线」的硬约束。否决。
@@ -70,5 +78,5 @@
 - 资料管线：`tools/build_map.py`；资产 `app/src/main/assets/maps/provinces.json`（已入库）与 `app/src/main/assets/maps/README.md`（来源、授权、重生成步骤）。
 - 纯函数：`analysis/MapModels.kt`（`LonLat`、`ProvinceShape` 多环多边形、`MapSite`、`parseLonLat`）、`analysis/MapProjection.kt`（`mercatorY`／`inverseMercatorY`、`project`／`unproject`、`fitTransform`）、`analysis/Voronoi.kt`（`voronoiCells`、`PlaneRect`、`PlanePoint`）。
 - 数据与界面：`data/MapAssets.kt`（读 assets、缓存、降级）、`ui/ClusterMapScreen.kt`（全屏页、标题、两个开关、图例、选中详情、返回）、`ui/GeoMapView.kt`（Compose Canvas：省界底图 + 泰森多边形 + 站点 + 标签、手势与点选）。
-- 测试：地图相关 JVM 15 项——`MapProjectionTest` 6（Mercator 正反解、project/unproject 往返、fitTransform 缩放与置中、空底图退化）、`VoronoiTest` 6（裁剪、重合站点、单站点、退化为空）、`GeoCoordinateTest` 3（经纬度解析与范围校验）；仪器化 26 项中聚類用例顺带断言每个点经纬度落在底图 bbox 内（100.2–119.7／21.5–33.5）。
+- 测试：地图相关 JVM 17 项——`MapProjectionTest` 8（Mercator 正反解、project/unproject 往返、fitTransform 缩放与置中、空底图退化、两轴同单位、等比宽高比、不同纬度不塌陷）、`VoronoiTest` 6（裁剪、重合站点、单站点、退化为空）、`GeoCoordinateTest` 3（经纬度解析与范围校验）；仪器化 27 项中聚類用例顺带断言每个点经纬度落在底图 bbox 内（100.2–119.7／21.5–33.5），`mapProjectionKeepsGeographicProportion` 用真实 491 点 + 真实底图锁投影单位与内容框。
 - 发布：0.5-alpha.5 / versionCode 53（2026-11-20）对外发布，地图展示页随该版上线。

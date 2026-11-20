@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -29,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.siongdict.app.analysis.MapSite
 import org.siongdict.app.analysis.PlanePoint
-import org.siongdict.app.analysis.PlaneRect
 import org.siongdict.app.analysis.ProvinceShape
 import org.siongdict.app.analysis.fitTransform
 import org.siongdict.app.analysis.voronoiCells
@@ -106,7 +106,10 @@ internal fun GeoMapView(
         val sitePositions = remember(transform, sites) {
             sites.map { transform.project(it.lon, it.lat) }
         }
-        val cells = remember(showVoronoi, sites, widthPx, heightPx) {
+        // 泰森多邊形只鋪在地圖內容框內（不是整塊畫布），否則內容框外的空白也會被切成
+        // 貫穿畫布的長條，看起來像一堆豎線。
+        val contentBounds = transform.contentBounds()
+        val cells = remember(showVoronoi, sites, transform) {
             if (!showVoronoi || sites.isEmpty()) {
                 emptyList()
             } else {
@@ -115,7 +118,7 @@ internal fun GeoMapView(
                         val point = transform.project(site.lon, site.lat)
                         PlanePoint(point.first, point.second)
                     },
-                    PlaneRect(0f, 0f, widthPx, heightPx),
+                    contentBounds,
                 )
             }
         }
@@ -185,23 +188,30 @@ internal fun GeoMapView(
                         }
                     }
 
-                    // ② 泰森多邊形：類別色淡填 + 淡描邊。
-                    cells.forEachIndexed { index, polygon ->
-                        if (polygon.size < 3) return@forEachIndexed
-                        // 單元格與站點同序，顏色要按站點所屬類別取，而不是按索引取。
-                        val color = clusterColors.getOrElse(sites[index].cluster) { Color.Gray }
-                        val path = Path()
-                        polygon.forEachIndexed { pointIndex, point ->
-                            if (pointIndex == 0) path.moveTo(point.x, point.y)
-                            else path.lineTo(point.x, point.y)
+                    // ② 泰森多邊形：類別色淡填 + 淡描邊，裁剪在地圖內容框內。
+                    clipRect(
+                        left = contentBounds.left,
+                        top = contentBounds.top,
+                        right = contentBounds.right,
+                        bottom = contentBounds.bottom,
+                    ) {
+                        cells.forEachIndexed { index, polygon ->
+                            if (polygon.size < 3) return@forEachIndexed
+                            // 單元格與站點同序，顏色要按站點所屬類別取，而不是按索引取。
+                            val color = clusterColors.getOrElse(sites[index].cluster) { Color.Gray }
+                            val path = Path()
+                            polygon.forEachIndexed { pointIndex, point ->
+                                if (pointIndex == 0) path.moveTo(point.x, point.y)
+                                else path.lineTo(point.x, point.y)
+                            }
+                            path.close()
+                            drawPath(path, color = color.copy(alpha = 0.18f))
+                            drawPath(
+                                path,
+                                color = color.copy(alpha = 0.35f),
+                                style = Stroke(width = 1f),
+                            )
                         }
-                        path.close()
-                        drawPath(path, color = color.copy(alpha = 0.18f))
-                        drawPath(
-                            path,
-                            color = color.copy(alpha = 0.35f),
-                            style = Stroke(width = 1f),
-                        )
                     }
 
                     // ③ 站點：先畫未選中的，再畫選中的（保證在最上層）。

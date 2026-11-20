@@ -7,6 +7,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.requery.android.database.sqlite.SQLiteDatabase as RequerySQLiteDatabase
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -20,9 +22,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.siongdict.app.analysis.ClusterAnalysisResult
 import org.siongdict.app.analysis.ClusterEngine
+import org.siongdict.app.analysis.fitTransform
 import org.siongdict.app.analysis.groupedLayout3D
+import org.siongdict.app.analysis.MapSite
 import org.siongdict.app.analysis.minClusterSize
+import org.siongdict.app.analysis.PlanePoint
+import org.siongdict.app.analysis.voronoiCells
 import org.siongdict.app.data.LocalData
+import org.siongdict.app.data.MapAssets
 import org.siongdict.app.data.ToneFormatter
 import org.siongdict.app.ui.SearchUiState
 import org.siongdict.app.ui.SearchViewModel
@@ -1692,6 +1699,93 @@ class DataLayerTest {
             "分群锚点布局應把同類收緊：類內平均距 $meanIntra 應小於類間質心平均距 $meanBetween",
             meanIntra < meanBetween
         )
+    }
+
+    /**
+     * 地圖投影單位回歸鎖（2026-11-20 修正）：經度與 Web Mercator 縱座標必須換算成同一單位（弧度）、
+     * 共用同一個 scale。修正前 X 用「度」、Y 用「弧度」，兩軸相差 180/π ≈ 57.3 倍，真實 App 的圖被壓成
+     * 約 1050×12.75 px 的橫帶、點幾乎全落在同一行、泰森多邊形退化成貫穿畫布的豎條。
+     *
+     * 這裡用真實庫的 491 個方言點 + 真實離線底圖跑 fitTransform(1074×1000, padding 12)：
+     * 內容高寬比須等於兩軸弧度跨度比（誤差 < 1%）、contentHeight 必須 > 500 px、
+     * 投影點不得共線、Voronoi 單元格必須全部落在 contentBounds 內。
+     */
+    @Test
+    fun mapProjectionKeepsGeographicProportion() = runBlocking {
+        val d = data()
+        d.maintenance.prepare()
+        val profiles = d.lexicon.dialectProfiles()
+        assertEquals("方言點應為 491 個", 491, profiles.size)
+        val located = profiles.filter { it.lon != null && it.lat != null }
+        assertEquals("491 個方言點的經緯度應全部有效", 491, located.size)
+
+        val shapes = MapAssets.load(InstrumentationRegistry.getInstrumentation().targetContext)
+        assertEquals("離線底圖應有 20 個省級輪廓", 20, shapes.size)
+
+        val sites = located.map { MapSite(it.lang, it.lon!!, it.lat!!, 0, "#8B0000") }
+        val transform = fitTransform(sites, shapes, 1074f, 1000f, 12f)
+        val projected = sites.map { transform.project(it.lon, it.lat) }
+
+        // 1) 兩軸同單位：內容高寬比 = Mercator 縱跨度 / 經度弧度跨度。
+        val lonSpanRad = (transform.maxLon - transform.minLon) * PI / 180.0
+        val mercatorSpan = transform.maxMercatorY - transform.minMercatorY
+        val expectedAspect = mercatorSpan / lonSpanRad
+        val actualAspect = (transform.contentHeight / transform.contentWidth).toDouble()
+        val aspectError = abs(actualAspect - expectedAspect) / expectedAspect
+        Log.i(
+            "ClusterTest",
+            "map shapes=" + shapes.size + " contentW=" + transform.contentWidth +
+                " contentH=" + transform.contentHeight + " aspect=" + actualAspect +
+                " expectedAspect=" + expectedAspect + " aspectError=" + aspectError
+        )
+        assertTrue(
+            "內容高寬比應等於兩軸弧度跨度比（實際 " + actualAspect + "，預期 " + expectedAspect + "）",
+            aspectError < 0.01
+        )
+        assertTrue(
+            "contentHeight 應 > 500 px（修正前只有約 12.75 px，實際 " + transform.contentHeight + "）",
+            transform.contentHeight > 500f
+        )
+
+        // 2) 所有投影點都要落在內容框內（允許 ±0.5 px 的浮點誤差）。
+        val bounds = transform.contentBounds()
+        projected.forEachIndexed { index, point ->
+            assertTrue(
+                sites[index].lang + " 投影點 (" + point.first + ", " + point.second + ") 應落在 contentBounds " +
+                    "[" + bounds.left + ", " + bounds.right + "]×[" + bounds.top + ", " + bounds.bottom + "] 內",
+                point.first >= bounds.left - 0.5f && point.first <= bounds.right + 0.5f &&
+                    point.second >= bounds.top - 0.5f && point.second <= bounds.bottom + 0.5f
+            )
+        }
+
+        // 3) 點不得共線：y 標準差要佔內容高度的相當比例，且不同 y 值要夠多。
+        val ys = projected.map { it.second.toDouble() }
+        val meanY = ys.average()
+        val yStdDev = sqrt(ys.sumOf { (it - meanY) * (it - meanY) } / ys.size)
+        val distinctY = projected.map { it.second }.distinct().size
+        Log.i(
+            "ClusterTest",
+            "map yStdDev=" + yStdDev + " distinctY=" + distinctY +
+                " contentH=" + transform.contentHeight
+        )
+        assertTrue(
+            "投影 y 標準差應 > contentHeight 的 10%（實際 " + yStdDev + "，內容高 " + transform.contentHeight + "）",
+            yStdDev > 0.1 * transform.contentHeight
+        )
+        assertTrue("不同 y 值的點應 > 100 個（實際 " + distinctY + "）", distinctY > 100)
+
+        // 4) 泰森多邊形必須裁剪在 contentBounds 內，不能像修正前那樣鋪成貫穿畫布的豎條。
+        val cells = voronoiCells(projected.map { PlanePoint(it.first, it.second) }, bounds)
+        assertEquals("Voronoi 單元格數量應等於站點數", 491, cells.size)
+        cells.forEachIndexed { index, cell ->
+            for (vertex in cell) {
+                assertTrue(
+                    sites[index].lang + " 的 Voronoi 頂點 (" + vertex.x + ", " + vertex.y + ") 超出 contentBounds",
+                    vertex.x >= bounds.left - 0.5f && vertex.x <= bounds.right + 0.5f &&
+                        vertex.y >= bounds.top - 0.5f && vertex.y <= bounds.bottom + 0.5f
+                )
+            }
+        }
     }
 
 }
