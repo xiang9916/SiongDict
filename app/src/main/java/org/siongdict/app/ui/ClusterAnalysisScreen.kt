@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -32,65 +34,67 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import org.siongdict.app.analysis.ClusterAnalysisResult
 import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * 「聚類分析」对话框（研究入口）：参数调节 + 力导向散点图 + 选中点详情。
+ * 「聚類分析」全屏页（研究入口）：参数调节 + 三维力导向散点图 + 选中点详情。
  *
- * 对话框只负责展示与转发交互；聚类、连线与代际守卫都在 [SearchViewModel] 里完成。
+ * 全屏而非对话框：画布需要尽量大的触控区域，且返回键应与「關閉」一致地退出。
+ * 页面只负责展示与转发交互；聚类、连线与代际守卫都在 [SearchViewModel] 里完成。
  * - 分類數滑桿只切换分区（[SearchViewModel.setClusterCount]），不重算；
  * - 最小義項數滑桿在松手时才提交（[SearchViewModel.setMinTags]），拖动期间只改本地草稿，
  *   避免每动一格就重算一次全量聚类。
  */
 @Composable
-internal fun ClusterAnalysisDialog(
+internal fun ClusterAnalysisScreen(
     state: ClusterUiState,
     onDismiss: () -> Unit,
     onClusterCount: (Int?) -> Unit,
     onMinTags: (Int) -> Unit,
     onSelectPoint: (String?) -> Unit
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        // 自定义尺寸：默认平台宽度约 280dp，放不下散点图。
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    // 全屏页没有 Dialog 的返回键处理，这里显式接管：返回键 = 關閉。
+    BackHandler(onBack = onDismiss)
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("cluster_screen")
     ) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.background,
-            tonalElevation = 0.dp,
+        Column(
             modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f)
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.systemBars)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(disp("聚類分析"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        if (state.loading) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        }
+                    Text(disp("聚類分析"), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    if (state.loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     }
-                    TextButton(onClick = onDismiss) { Text(disp("關閉")) }
                 }
-                HorizontalDivider()
+                TextButton(onClick = onDismiss, modifier = Modifier.testTag("cluster_close")) {
+                    Text(disp("關閉"))
+                }
+            }
+            HorizontalDivider()
 
                 when {
                     state.error != null && state.result == null -> MessagePane(
@@ -129,10 +133,9 @@ internal fun ClusterAnalysisDialog(
                 }
             }
         }
-    }
 }
 
-/** 对话框主体：摘要 → 参数 → 画布 → 选中点 → 类别图例 → 说明。 */
+/** 页面主体：摘要 → 参数 → 画布 → 选中点 → 类别图例 → 说明。 */
 @Composable
 private fun ClusterAnalysisBody(
     state: ClusterUiState,
@@ -319,7 +322,7 @@ private fun ClusterAnalysisBody(
             text = disp(
                 "相似度按共同義項計分：共享同源詞組 +1、無共享 −1，範圍 −1..1；" +
                     "畫布是三維力導向排版後的透視投影：單指拖動旋轉視角、雙指捏合縮放並平移、雙擊復原。" +
-                    "「自動」分群用加權圖的社群偵測（模組度最大化），分類數滑桿只切換層次聚類的分區、不重算。" +
+                    "「自動」分群用加權圖的社群偵測（模組度最大化），分類數滑桿只切換分群的分區、不重算。" +
                     "節點顏色為音典顏色，虛線凸包與色塊為聚類類別，連線為每個方言點前 2 條正相似邊。"
             ),
             fontSize = 12.sp,

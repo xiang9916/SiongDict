@@ -48,7 +48,7 @@
 
 ● **語言**：Kotlin + Jetpack Compose + Material 3
 
-● **資料庫**：SQLite FTS5 全文檢索，離線使用，無需聯網
+● **資料庫**：SQLite FTS5 全文檢索，除啟動時與手動「檢查更新」會連線 GitHub 查詢最新版本外，其餘功能離線使用，無需聯網
 
 ● **構建**：Gradle 8.11 + Android Gradle Plugin 8.7.3 + Kotlin 2.0.21
 

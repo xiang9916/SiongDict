@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 仅用于「檢查更新」：启动时与手动点按时 GET GitHub 的最新 Release 元数据。
+         除这一项外 App 不联网，字音库与同源词库全部离线。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,6 +56,15 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.testTag
+import org.siongdict.app.data.UpdateState
 import kotlinx.coroutines.launch
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.SearchMode
@@ -72,95 +82,123 @@ fun SearchScreen(viewModel: SearchViewModel) {
     var showFilterDialog by remember { mutableStateOf(false) }
     var showResearchDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    val suffix = if (uiState.dbOutdated) " - 有更新" else ""
-                    Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
-                },
-                actions = {
-                    IconButton(onClick = { showResearchDialog = true }) {
-                        Icon(
-                            SiongIcons.Research,
-                            contentDescription = "研究",
-                            tint = Color.White
-                        )
-                    }
-                    IconButton(onClick = { showFilterDialog = true }) {
-                        Icon(
-                            SiongIcons.Visibility,
-                            contentDescription = "方言篩選",
-                            tint = Color.White
-                        )
-                    }
-                    IconButton(onClick = { showInfoDialog = true }) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = "關於",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SiongDarkRed,
-                    titleContentColor = Color.White
-                )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            SearchBar(
-                query = uiState.query,
-                mode = uiState.mode,
-                onQueryChange = viewModel::updateQuery,
-                onSearch = viewModel::search
-            )
-            ModeSelector(selected = uiState.mode, onSelect = viewModel::updateMode)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            ResultsPane(
-                uiState = uiState,
-                listState = listState,
-                onJumpTo = { index -> scope.launch { listState.animateScrollToItem(index) } }
-            )
-        }
-    }
-
-    if (showFilterDialog) {
-        DialectFilterDialog(
-            tree = uiState.dialectTree,
-            filters = uiState.filters,
-            onDismiss = { showFilterDialog = false },
-            onFiltersChange = viewModel::updateFilters
-        )
-    }
-
-    if (showInfoDialog) {
-        InfoDialog(viewModel = viewModel, onDismiss = { showInfoDialog = false })
-    }
-
-    if (showResearchDialog) {
-        ResearchDialog(
-            onDismiss = { showResearchDialog = false },
-            onOpenClusterAnalysis = {
-                showResearchDialog = false
-                viewModel.openClusterAnalysis()
-            }
-        )
-    }
-
+    // 聚类分析是全屏页，不套 Dialog：进入后整页替换检索界面，返回键与「關閉」都走 onDismiss。
     if (clusterState.visible) {
-        ClusterAnalysisDialog(
+        ClusterAnalysisScreen(
             state = clusterState,
             onDismiss = viewModel::closeClusterAnalysis,
             onClusterCount = viewModel::setClusterCount,
             onMinTags = viewModel::setMinTags,
             onSelectPoint = viewModel::selectClusterPoint
         )
+    } else {
+        // 有新版时「關於」图标原地旋转：0→180° 停在「!」的形状，再转到 360° 回到「i」，循环往复。
+        // 只在发现新版本时才创建无限动画，避免无更新时常驻重组。
+        val hasUpdate = UpdateState.hasUpdate(uiState.appVersion)
+        val infoRotation = if (hasUpdate) {
+            val spin = rememberInfiniteTransition(label = "update-icon")
+            val spinAngle by spin.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 2000
+                        0f at 0
+                        180f at 500
+                        180f at 1000
+                        360f at 1500
+                        360f at 2000
+                    },
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "update-icon-angle"
+            )
+            spinAngle
+        } else {
+            0f
+        }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        val suffix = if (uiState.dbOutdated) " - 有更新" else ""
+                        Text("湘典 (${uiState.appVersion}$suffix)", fontWeight = FontWeight.Bold)
+                    },
+                    actions = {
+                        IconButton(onClick = { showResearchDialog = true }) {
+                            Icon(
+                                SiongIcons.Research,
+                                contentDescription = "研究",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showFilterDialog = true }) {
+                            Icon(
+                                SiongIcons.Visibility,
+                                contentDescription = "方言篩選",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showInfoDialog = true }) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "關於",
+                                tint = Color.White,
+                                modifier = Modifier.rotate(infoRotation)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = SiongDarkRed,
+                        titleContentColor = Color.White
+                    )
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                SearchBar(
+                    query = uiState.query,
+                    mode = uiState.mode,
+                    onQueryChange = viewModel::updateQuery,
+                    onSearch = viewModel::search
+                )
+                ModeSelector(selected = uiState.mode, onSelect = viewModel::updateMode)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                ResultsPane(
+                    uiState = uiState,
+                    listState = listState,
+                    onJumpTo = { index -> scope.launch { listState.animateScrollToItem(index) } }
+                )
+            }
+        }
+
+        if (showFilterDialog) {
+            DialectFilterDialog(
+                tree = uiState.dialectTree,
+                filters = uiState.filters,
+                onDismiss = { showFilterDialog = false },
+                onFiltersChange = viewModel::updateFilters
+            )
+        }
+
+        if (showInfoDialog) {
+            InfoDialog(viewModel = viewModel, onDismiss = { showInfoDialog = false })
+        }
+
+        if (showResearchDialog) {
+            ResearchDialog(
+                onDismiss = { showResearchDialog = false },
+                onOpenClusterAnalysis = {
+                    showResearchDialog = false
+                    viewModel.openClusterAnalysis()
+                }
+            )
+        }
     }
 }
 
@@ -363,46 +401,77 @@ private fun DialectFilterDialog(
 ) {
     val rows = remember(tree) { flattenDialectTree(tree) }
     val allLeaves = remember(tree) { allLeafPaths(tree) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(disp("方言篩選"), fontWeight = FontWeight.Bold) },
-        text = {
-            if (rows.isEmpty()) {
-                Text(disp("暫無分區資料"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
-                    itemsIndexed(rows, key = { _, row -> row.first.path }) { _, row ->
-                        val (node, depth) = row
-                        DialectFilterRow(
-                            node = node,
-                            depth = depth,
-                            state = triStateOf(nodeLeafPaths(node), filters.selected),
-                            onToggle = {
-                                onFiltersChange(
-                                    DialectFilters(
-                                        toggleLeaves(filters.selected, nodeLeafPaths(node), allLeaves)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.background,
+            tonalElevation = 0.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .testTag("filter_dialog")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                // 三個操作按钮像「關於」一样放在标题行右侧：全選 / 全不選 / 關閉。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = disp("方言篩選"),
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = { onFiltersChange(DialectFilters(null)) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.testTag("filter_select_all")
+                    ) { Text(disp("全選"), fontSize = 13.sp) }
+                    TextButton(
+                        onClick = { onFiltersChange(DialectFilters(emptySet())) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.testTag("filter_select_none")
+                    ) { Text(disp("全不選"), fontSize = 13.sp) }
+                    TextButton(
+                        onClick = onDismiss,
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.testTag("filter_close")
+                    ) { Text(disp("關閉"), fontSize = 13.sp) }
+                }
+                HorizontalDivider()
+                if (rows.isEmpty()) {
+                    Text(
+                        text = disp("暫無分區資料"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(20.dp)
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                        itemsIndexed(rows, key = { _, row -> row.first.path }) { _, row ->
+                            val (node, depth) = row
+                            DialectFilterRow(
+                                node = node,
+                                depth = depth,
+                                state = triStateOf(nodeLeafPaths(node), filters.selected),
+                                onToggle = {
+                                    onFiltersChange(
+                                        DialectFilters(
+                                            toggleLeaves(filters.selected, nodeLeafPaths(node), allLeaves)
+                                        )
                                     )
-                                )
-                            }
-                        )
+                                }
+                            )
+                        }
                     }
                 }
             }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { onFiltersChange(DialectFilters(null)) }) {
-                    Text(disp("全選"))
-                }
-                TextButton(onClick = { onFiltersChange(DialectFilters(emptySet())) }) {
-                    Text(disp("全不選"))
-                }
-                TextButton(onClick = onDismiss) {
-                    Text(disp("關閉"))
-                }
-            }
         }
-    )
+    }
 }
 
 /** 一组叶子的三态：未筛选（selected == null）视为全选。 */

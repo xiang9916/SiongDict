@@ -191,7 +191,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：2,772 条 / 203 组、本版新增的 50 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：2,804 条 / 206 组、本版新增的 53 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -231,9 +231,10 @@ class DataLayerTest {
                 }
 
             // 2026-11-20 用户裁决：Cold/Hit 第二轮收录 14 条（ADR-0005 附录十九），2,757/201 → 2,771/202；
-            // 同日第三轮 3 新增/1 移动/1 删除/1 合并（ADR-0005 附录二十），2,771/202 → 2,772/203。
-            assertEquals(2772, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(203, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            // 同日第三轮 3 新增/1 移动/1 删除/1 合并（ADR-0005 附录二十），2,771/202 → 2,772/203；
+            // 同日第四轮 3 个新组 32 条（ADR-0005 附录二十二），2,772/203 → 2,804/206。
+            assertEquals(2804, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(206, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -250,7 +251,8 @@ class DataLayerTest {
                 "Cold_laŋ4", "Cold_liaŋ4", "Hit_tiaŋ5", "Hit_tiaŋ3", "Hit_taŋ3", "Hit_tæ3", "Fat_dut8",
                 "Shield_ʃwin3", "Rub_tsʰeu3", "Curse_fan3", "Curse_ʃwien3",
                 "Pile_tsut7", "Pile_tʃiuk7", "Hungry_la8", "ScoopRice_xa3",
-                "LookFor_nien2", "Hit_pʰiaŋ3"
+                "LookFor_nien2", "Hit_pʰiaŋ3",
+                "Devour_tai3", "Cangue_ka1", "Extinguish_i5"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
@@ -642,12 +644,18 @@ class DataLayerTest {
                 )
             )
             assertEquals(
-                "Hit_tæ3 成员不得与既有组 (lang, ipa) 重叠",
-                0,
-                scalar(
-                    "SELECT COUNT(*) FROM cognates c WHERE c.cognate_group = 'Hit_tæ3' AND EXISTS (" +
-                        "SELECT 1 FROM cognates o WHERE o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Hit_tæ3')"
-                )
+                "Hit_tæ3 仅桑植芙蓉橋 tæ3 与 Devour_tai3 跨组同音（附录二十二 §六）",
+                listOf("桑植芙蓉橋|tæ3|Devour_tai3"),
+                db.rawQuery(
+                    "SELECT c.lang || '|' || c.ipa || '|' || o.cognate_group FROM cognates c " +
+                        "JOIN cognates o ON o.lang = c.lang AND o.ipa = c.ipa AND o.cognate_group <> 'Hit_tæ3' " +
+                        "WHERE c.cognate_group = 'Hit_tæ3' ORDER BY o.cognate_group",
+                    null
+                ).use { c ->
+                    val rows = mutableListOf<String>()
+                    while (c.moveToNext()) rows.add(c.getString(0))
+                    rows
+                }
             )
             assertEquals(
                 "Hit_tæ3 组参数（Hit/打，33 条 33 点）",
@@ -1256,12 +1264,200 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词成员关系端口（聚类相似度的最小输入）：全表 2,772 条、382 个方言点、203 组、137 个义项；
+     * 第四轮入库（ADR-0005 附录二十二）：新建 Devour_tai3（5 条 5 点）、Cangue_ka1（9 条 9 点）、
+     * Extinguish_i5（18 条 18 点），以及桑植芙蓉橋 tæ3 跨组同音（Hit_tæ3 与 Devour_tai3 各一行）的裁定。
+     * 库存 2,804 条 / 206 组；空注释 587（本轮新增 2 条例外 2802／2803）；(lang, ipa) 重复对 45。
+     */
+    @Test
+    fun fourthRoundGroupsMatchDatabase() = runBlocking {
+        val d = data()
+        d.maintenance.prepare()
+        val db = SQLiteDatabase.openDatabase(
+            ctx.getDatabasePath("cognates.db").absolutePath,
+            null,
+            SQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            fun scalar(sql: String, vararg args: String): Int =
+                db.rawQuery(sql, args).use { c -> c.moveToFirst(); c.getInt(0) }
+
+            fun members(group: String): List<String> =
+                db.rawQuery(
+                    "SELECT lang || '|' || ipa FROM cognates WHERE cognate_group = ?",
+                    arrayOf(group)
+                ).use { c ->
+                    val rows = mutableListOf<String>()
+                    while (c.moveToNext()) rows.add(c.getString(0))
+                    rows
+                }
+
+            fun toneProfile(group: String): String =
+                db.rawQuery(
+                    "SELECT tone_cat || ':' || COUNT(*) FROM cognates WHERE cognate_group = ? " +
+                        "GROUP BY tone_cat ORDER BY tone_cat",
+                    arrayOf(group)
+                ).use { c ->
+                    val rows = mutableListOf<String>()
+                    while (c.moveToNext()) rows.add(c.getString(0))
+                    rows.joinToString(",")
+                }
+
+            assertEquals("cognates 全表 2,804 条", 2804, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals("音类组 206 个", 206, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals(
+                "空注释 587 条（附录二十二新增 2802／2803 两条例外）",
+                587,
+                scalar("SELECT COUNT(*) FROM cognates WHERE note IS NULL OR TRIM(note) = ''")
+            )
+            assertEquals(
+                "(lang, ipa) 重复对 45（桑植芙蓉橋 tæ3 跨组并存，见附录二十二 §六）",
+                45,
+                scalar(
+                    "SELECT COUNT(*) FROM (SELECT lang, ipa FROM cognates GROUP BY lang, ipa HAVING COUNT(*) > 1)"
+                )
+            )
+
+            // Devour_tai3：义项 Devour／猛吃，蟹摄 -ai/-æ，声母 t，上声 3，5 条 5 点。
+            assertEquals(5, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Devour_tai3'"))
+            assertEquals(5, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Devour_tai3'"))
+            assertEquals("Devour_tai3 调类分布（上声 3 共 5 行）", "3:5", toneProfile("Devour_tai3"))
+            assertEquals(
+                "Devour_tai3 声母须全为 t",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Devour_tai3' AND initial <> 't'")
+            )
+            assertEquals(
+                "Devour_tai3 韵母限 ai／æ",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Devour_tai3' AND final NOT IN ('ai','æ')")
+            )
+            assertEquals(
+                "Devour_tai3 组参数（Devour/猛吃，5 条 5 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Devour_tai3' " +
+                        "AND semantic_tag = 'Devour' AND semantic_label = '猛吃' " +
+                        "AND member_count = 5 AND dialect_count = 5"
+                )
+            )
+            assertEquals(
+                "Devour_tai3 成员 (lang|ipa) 集合（5 条 5 点）",
+                listOf("安鄉|tai3", "石門|tai3", "臨澧珠日|tai3", "津市渡口|tai3", "桑植芙蓉橋|tæ3").sorted(),
+                members("Devour_tai3").sorted()
+            )
+
+            // Cangue_ka1：义项 Cangue／枷（器具），k- 系声母、a/ɑ/ɑɔ 韵、阴平 1，9 条 9 点；2802／2803 为空注例外。
+            assertEquals(9, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cangue_ka1'"))
+            assertEquals(9, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Cangue_ka1'"))
+            assertEquals("Cangue_ka1 调类分布（阴平 1 共 9 行）", "1:9", toneProfile("Cangue_ka1"))
+            assertEquals(
+                "Cangue_ka1 声母须为 k 系",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cangue_ka1' AND initial NOT IN ('k','kʰ')")
+            )
+            assertEquals(
+                "Cangue_ka1 韵母限 a／ɑ／ɑɔ",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cangue_ka1' AND final NOT IN ('a','ɑ','ɑɔ')")
+            )
+            assertEquals(
+                "Cangue_ka1 空注释恰 2 条（2802 津市渡口、2803 桃源，附录二十二 §五）",
+                2,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Cangue_ka1' AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "Cangue_ka1 空注释的正是 2802／2803 两行",
+                2,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE id IN (2802, 2803) " +
+                        "AND cognate_group = 'Cangue_ka1' AND (note IS NULL OR TRIM(note) = '')"
+                )
+            )
+            assertEquals(
+                "Cangue_ka1 组参数（Cangue/枷（器具），9 条 9 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Cangue_ka1' " +
+                        "AND semantic_tag = 'Cangue' AND semantic_label = '枷（器具）' " +
+                        "AND member_count = 9 AND dialect_count = 9"
+                )
+            )
+            assertEquals(
+                "Cangue_ka1 成员 (lang|ipa) 集合（9 条 9 点）",
+                listOf(
+                    "安鄉|ka1", "常德前河|ka1", "臨澧珠日|ka1", "桑植芙蓉橋|ka1",
+                    "岳陽張谷英|kɑ1", "益陽泥江口|ka1", "溧陽繆巷|kɑɔ1",
+                    "津市渡口|ka1", "桃源|ka1"
+                ).sorted(),
+                members("Cangue_ka1").sorted()
+            )
+
+            // Extinguish_i5：义项 Extinguish／熄滅，零声母、韵母全 i、阴去 5，18 条 18 点，注释全非空。
+            assertEquals(18, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Extinguish_i5'"))
+            assertEquals(18, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Extinguish_i5'"))
+            assertEquals("Extinguish_i5 调类分布（阴去 5 共 18 行）", "5:18", toneProfile("Extinguish_i5"))
+            assertEquals(
+                "Extinguish_i5 声母须全为空（零声母）",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Extinguish_i5' AND initial <> ''")
+            )
+            assertEquals(
+                "Extinguish_i5 韵母须全为 i",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Extinguish_i5' AND final <> 'i'")
+            )
+            assertEquals(
+                "Extinguish_i5 18 条注释均不得为空",
+                18,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Extinguish_i5' " +
+                        "AND note IS NOT NULL AND TRIM(note) <> ''"
+                )
+            )
+            assertEquals(
+                "Extinguish_i5 组参数（Extinguish/熄滅，18 条 18 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Extinguish_i5' " +
+                        "AND semantic_tag = 'Extinguish' AND semantic_label = '熄滅' " +
+                        "AND member_count = 18 AND dialect_count = 18"
+                )
+            )
+
+            // 桑植芙蓉橋 tæ3 跨组同音（裁定允许，先例 汨羅長樂 loŋ3）：Hit_tæ3 与 Devour_tai3 各一行。
+            assertEquals(
+                "桑植芙蓉橋|tæ3 应有 2 行（Hit_tæ3 + Devour_tai3）",
+                2,
+                scalar("SELECT COUNT(*) FROM cognates WHERE lang = '桑植芙蓉橋' AND ipa = 'tæ3'")
+            )
+            assertEquals(
+                "桑植芙蓉橋|tæ3 在 Hit_tæ3 恰 1 行",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE lang = '桑植芙蓉橋' AND ipa = 'tæ3' " +
+                        "AND cognate_group = 'Hit_tæ3'"
+                )
+            )
+            assertEquals(
+                "桑植芙蓉橋|tæ3 在 Devour_tai3 恰 1 行",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE lang = '桑植芙蓉橋' AND ipa = 'tæ3' " +
+                        "AND cognate_group = 'Devour_tai3'"
+                )
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * 同源词成员关系端口（聚类相似度的最小输入）：全表 2,804 条、383 个方言点、206 组、140 个义项；
      * 每条 groupId 必须以 semanticTag + "_" 开头；抽查 Pile_tsut7（25 条）与 Curse_ʃwien3（8 条）；
      * 端口结果须与 cognates.db 直读的 (lang, groupId, semanticTag) 三元组完全一致。
      *
-     * 2,772 / 382 / 203 / 137 与两组条数是查 real 库（2026-11-20，ADR-0005 附录十九收录 14 条、
-     * 附录二十第三轮 3 新增/1 移动/1 删除/1 合并之后）确认的版本事实。
+     * 2,804 / 383 / 206 / 140 与两组条数是查 real 库（2026-11-20，ADR-0005 附录十九 14 条、
+     * 附录二十第三轮 3 新增/1 移动/1 删除/1 合并、附录二十二第四轮 3 组 32 条之后）确认的版本事实。
      */
     @Test
     fun cognateMembershipsMatchDatabase() = runBlocking {
@@ -1269,10 +1465,10 @@ class DataLayerTest {
         d.maintenance.prepare()
         val memberships = d.cognateBook.memberships()
 
-        assertEquals("cognates 全表 2,772 条成员", 2772, memberships.size)
-        assertEquals("成员应覆盖 382 个方言点", 382, memberships.map { it.lang }.distinct().size)
-        assertEquals("成员应覆盖 203 个音类组", 203, memberships.map { it.groupId }.distinct().size)
-        assertEquals("成员应覆盖 137 个义项", 137, memberships.map { it.semanticTag }.distinct().size)
+        assertEquals("cognates 全表 2,804 条成员", 2804, memberships.size)
+        assertEquals("成员应覆盖 383 个方言点", 383, memberships.map { it.lang }.distinct().size)
+        assertEquals("成员应覆盖 206 个音类组", 206, memberships.map { it.groupId }.distinct().size)
+        assertEquals("成员应覆盖 140 个义项", 140, memberships.map { it.semanticTag }.distinct().size)
 
         assertTrue("lang 不得为空", memberships.all { it.lang.isNotBlank() })
         assertTrue("groupId 不得为空", memberships.all { it.groupId.isNotBlank() })
@@ -1380,7 +1576,7 @@ class DataLayerTest {
             "groupedLayout3D intra=$meanIntra between=$meanBetween centroids=$centroids"
         )
 
-        assertTrue("参与聚类的点应 > 100（真实库 382 点）", result.points.size > 100)
+        assertTrue("参与聚类的点应 > 100（真实库 383 点）", result.points.size > 100)
         assertTrue(
             "自动类数应 >= 3（实际 k=${result.communities.k}，Q=${result.modularity}）",
             result.communities.k >= 3

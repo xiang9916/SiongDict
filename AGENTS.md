@@ -7,11 +7,11 @@
 
 ## 0. 现状速览
 
-- 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索，无需联网。
+- 原生 Android App（Kotlin + Jetpack Compose + Material 3），离线 SQLite FTS5 全文检索；唯一联网用途是启动时与手动「檢查更新」查 GitHub Release（见 ADR-0009、§7.10），其余功能无需联网。
 - 语言约定：**开发文档一律用简体中文**（本文件、`CONTEXT.md`、`docs/adr/*`、交接文档与技能文档）；**面向使用者的前端内容用繁体中文**（App 界面文案、`README.md`、`CHANGELOG.md`、义类标签）——本项目以汉字研究为主，繁体是显示层标准；开发侧用简体提升效率。
 - 当前版本 **0.5-alpha.3**：`versionCode 51`、`versionName "0.5-alpha.3"`，只存在于 `app/build.gradle`。
 - 线上仓库 `xiang9916/SiongDict`；`master` 是唯一分支，**没有** `develop`、也**没有** `.github/workflows`（无 CI）。
-- 资料规模：**491 个方言点**、**609,323 条读音**、124,577 组同音字；同源词 **203 组 / 2,772 条**（全数人工标注，无自动条目）。
+- 资料规模：**491 个方言点**、**609,323 条读音**、124,577 组同音字；同源词 **206 组 / 2,804 条**（全数人工标注，无自动条目）。
 - git 仓库根 = 本文件所在目录；父目录不是仓库，所有 git 命令都在本目录内执行。
 - `.git` 约 **9 MB**：2026-10-04 重写过一次历史，把非代码大档全部剔除（见 §7.8）。**该日之前的 clone 已与远端分岔，请重新 clone 后再推送。**
 - 全部读音资料来自 [汉字音典 MCPDict](https://github.com/osfans/MCPDict)。本项目只做三件事：筛选湘语相关方言点、重建检索索引、人工标注同源词。
@@ -56,6 +56,9 @@ app/src/main/java/org/siongdict/app/
   data/LocalData.kt          本地数据层装配根（端口 + 共享设施）
   data/Models.kt             资料模型
   data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
+  data/UpdateChecker.kt      更新检查（GET GitHub releases/latest，8s 超时，纯函数可 JVM 测）
+  data/UpdateState.kt        更新检查结果缓存（SharedPreferences + 进程内状态）
+  data/EyeCare.kt            护眼模式开关（浅米色主题背景 0xFFF2EEE6）
   analysis/ClusterModels.kt  聚类分析结果模型（点、分区、模组度阈值 0.15）
   analysis/Similarity.kt     义项相似度 → 距离矩阵（共同义项 +1／−1／不计）
   analysis/HierarchicalClustering.kt UPGMA 平均链接 + 轮廓系数（k=2..min(10,n−1)，轮廓系数降为对照）
@@ -65,15 +68,15 @@ app/src/main/java/org/siongdict/app/
   ui/SearchScreen.kt         检索主界面（搜索栏、模式切换、结果列表与右侧跳转条、方言筛选）
   ui/DialectTree.kt         方言筛选树（音典分区 → 三级节点、纯函数）
   ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
-  ui/InfoDialog.kt           「關於」面板（说明页、简体渲染开关、重置資料庫）
+  ui/InfoDialog.kt           「關於」面板（说明页、檢查更新行、護眼模式开关、简体渲染开关、重置資料庫）
   ui/UiText.kt               显示层文本工具（简体渲染、字组标题）
   ui/icons/SiongIcons.kt     内联图标（两个 Material 图标 + 自绘「研究」放大镜原子图；替代 material-icons-extended）
   ui/theme/Theme.kt          品牌色与 Material 3 主题
   ui/SearchViewModel.kt      检索、分组、方言筛选、聚类分析（构造注入数据端口，普通 ViewModel）
   ui/SearchViewModelFactory.kt 生产装配（LocalData → 三个端口注入 ViewModel）
   ui/CognateExport.kt        同源词 CSV 导出
-  ui/ResearchDialog.kt       「研究」一级对话框（目前只有聚类分析一项）
-  ui/ClusterAnalysisDialog.kt 聚类分析全屏对话框（摘要、参数、图例、选中点详情）
+  ui/ResearchDialog.kt       「研究」一级对话框（白底 Dialog + 右上「關閉」；目前只有聚类分析一项）
+  ui/ClusterAnalysisScreen.kt 聚类分析全屏页（非对话框；摘要、参数、图例、选中点详情）
   ui/ClusterMap.kt           聚类三维散点画布（透视投影、分群聚拢动画、单指旋转、双指缩放平移、双击复位、标签去重叠、点选）
   ui/ClusterProjection.kt    三维透视投影（相机距离／焦距／偏航俯仰常量、深度半径缩放，纯函数）
   ui/ClusterColors.kt        类别调色盘与音典颜色解析（#RRGGBB／双色渐变）
@@ -204,20 +207,20 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 ② 注释的语义与该组**义项**相符，且经人工确认。
 **「音类对得上」只是必要条件，入组理由须是注释语义相符**：同点同韵母里挤着几百个字，`SetUp_tun5` 就出现过
 同点同韵母的 `敦 ten1` 注释是「敦促」、与该组的「敦／竖起」不是一个词。本规则**不追溯存量**
-（现有 2,772 条成员中 585 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
+（现有 2,804 条成员中 587 条无注释，是当年按文献核定的；2026-10-13 另有一次经维护者逐条核可的例外，见 ADR-0005 附录），只约束新增。
 
 维护者另有一套本机技能（同韵母比较判归音类、桥字验证、人工编辑同源词、CSV 导出）——**不随仓库分发**，仓库内的 `tools/*.py` 才是唯一事实来源。
 
 ### 5.1 聚类分析数据流（「研究」入口）
 
-「研究」不是检索模式，而是独立的对照工具：顶栏「研究」图标 → `ResearchDialog` → `ClusterAnalysisDialog`。全部在手机端计算，离线、不新增依赖。
+「研究」不是检索模式，而是独立的对照工具：顶栏「研究」图标 → `ResearchDialog` → `ClusterAnalysisScreen`（全屏页，不套 Dialog）。全部在手机端计算，离线、不新增依赖。
 
-- **输入**：`Lexicon.dialectProfiles()`（`info` 表的 簡稱/音典分區/音典顏色/音典排序，491 点）+ `CognateBook.memberships()`（`cognates` 的 lang/cognate_group/semantic_tag，2,772 条）。首次打开在 IO 上读一次存快照；之后调参只重算、不再读库；重置数据库作废快照并关闭对话框。
-- **范围**：先按**当地方言筛选树**切片（`selected == null` 全收，否则 `leafKey(division) ∈ selected`，与检索共用同一套前三段分区叶子键）；再排除没有同源词的点与义项数低于「最小义项数」的点。对话框摘要显式列出「可见方言点 N · 义项 T · 无同源词排除 x · 义项不足排除 y」。
-- **算法**（`analysis/` 六个纯 Kotlin 文件）：义项 = `semantic_tag`；共同义项下共享至少一个 `cognate_group` 记 +1、都收录但无共享记 −1、缺义项不计；s = 总分／共同义项数，距离 d = (1−s)/2（无共同义项时 d = 0.5）；**「自動」分群改为加权图社群偵測（确定性 Louvain，边权为相似度、≤3 层、模组度增益 <1e-9 停），optimalK = 社群数，sparse 判定改为模组度 < 0.15；轮廓系数仍计算但仅作对照（optimalSilhouette）**；布局改为三维力导向（Fibonacci 球面初值、归一化到单位立方体），画布做透视投影，支持单指旋转/双指缩放平移/双击复位；标签默认显示（≤40 点全显，否则按深度去重叠、上限 80）。**分群锚点布局 + 700ms 过渡动画**：先按当前分区的类号把同类点收缩到 Fibonacci 球面锚点附近（类号升序定锚点，类内按质心收缩、`spread = 0.35`，`anchorRadius = 0.35`），再由画布以 700 毫秒补间把点从旧坐标聚拢到新坐标——切换分类数时只重算分区与布局、不重跑聚类，聚拢过程可见。同一份资料坐标恒定。
+- **输入**：`Lexicon.dialectProfiles()`（`info` 表的 簡稱/音典分區/音典顏色/音典排序，491 点）+ `CognateBook.memberships()`（`cognates` 的 lang/cognate_group/semantic_tag，2,804 条）。首次打开在 IO 上读一次存快照；之后调参只重算、不再读库；重置数据库作废快照并关闭全屏页。
+- **范围**：先按**当地方言筛选树**切片（`selected == null` 全收，否则 `leafKey(division) ∈ selected`，与检索共用同一套前三段分区叶子键）；再排除没有同源词的点与义项数低于「最小义项数」的点。全屏页摘要显式列出「可见方言点 N · 义项 T · 无同源词排除 x · 义项不足排除 y」。2026-11-20 实测：491 点中默认排除 108 个无同源词的点，剩 383 点。
+- **算法**（`analysis/` 六个纯 Kotlin 文件）：义项 = `semantic_tag`；共同义项下共享至少一个 `cognate_group` 记 +1、都收录但无共享记 −1、缺义项不计；s = 总分／(|T| + λ)，λ = 2（收缩平均，s ∈ (−1,1)，共同义项越多同一比例越可信），距离 d = (1−s)/2（无共同义项时 d = 0.5）；**「自動」分群改为加权图社群偵測（确定性 Louvain，边权为相似度、≤3 层、模组度增益 <1e-9 停），optimalK = 社群数，sparse 判定改为模组度 < 0.15；轮廓系数仍计算但仅作对照（optimalSilhouette）**；布局改为三维力导向（Fibonacci 球面初值、归一化到单位立方体），画布做透视投影，支持单指旋转/双指缩放平移/双击复位；标签默认显示（≤40 点全显，否则按深度去重叠、上限 80）。**分群锚点布局 + 700ms 过渡动画**：先按当前分区的类号把同类点收缩到 Fibonacci 球面锚点附近（类号升序定锚点，类内按质心收缩、`spread = 0.35`，`anchorRadius = 0.35`），再由画布以 700 毫秒补间把点从旧坐标聚拢到新坐标——切换分类数时只重算分区与布局、不重跑聚类，聚拢过程可见。同一份资料坐标恒定。
 - **交互**：分类数滑桿只换分区、不重跑（`selectedK`，可回「自动」）；最小义项数滑桿松手后按快照重算，上限固定为快照中最大义项数（夹在 1..10），调高门槛不会缩水；点节点看该点义项／条目数并高亮所属类别；画布支持单指旋转、双指 0.6–4 倍缩放与平移、双击复位视角。
 - **配色**：节点用音典顏色（`#RRGGBB`／`#AARRGGBB`／逗号双色渐变），类别用固定 10 色调色盘（凸包填色与图例），两套不混用。
-- **复杂度**：O(n² + 成员条数)，n ≤ 382（有同源词的点），手机端毫秒到百毫秒级。
+- **复杂度**：O(n² + 成员条数)，n ≤ 383（有同源词的点），手机端毫秒到百毫秒级。
 - 决策与取舍见 `docs/adr/0008-cluster-analysis.md`。
 
 ## 6. 版本号与发版
@@ -266,22 +269,24 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-23 项仪器化测试（数据层 16 + 界面 7），需要模拟器或真机：
+25 项仪器化测试（数据层 17 + 界面 8），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 23/23
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 25/25
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
-- 另有 58 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、调色盘与方言树）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
+- 另有 63 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、调色盘与方言树、版本比较与更新解析）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
 - 本次（0.5-alpha.2）新增 3 项仪器化测试（`dialectProfilesLoadFromInfo` 方言画像、`cognateMembershipsMatchDatabase` 同源词成员、`researchOpensClusterAnalysis` 研究入口）与 14 项 JVM 测试（相似度 3、层次聚类 3、布局 1、聚类引擎 2、调色盘 2、ViewModel 聚类 3）。
 - `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
 - 0.5-alpha.3 起新增「自动类数 ≥3 且模组度 > 0.2」的仪器化断言（`clusterAnalysisUsesCommunityDetection`）：用真实库跑一遍聚类，社群偵测退化回 k=2 或模组度过低都会亮红灯；同一测试还断言 `groupedLayout3D` 的类内平均距离小于类间质心距离（聚拢确实按分群分离），并用 `Log.i("ClusterTest", …)` 打印真实 k／Q／类别规模／类质心供 `adb logcat -d -s ClusterTest` 核对。
+- 启动时会自动检查更新（`data/UpdateChecker.kt`，见 ADR-0009）：GET GitHub `releases/latest`，8 秒超时；失败静默、不阻断启动、不自动下载安装；结果缓存到 SharedPreferences，有新版本时「關於」图标旋转并在面板提示，点按打开 Release 页。手动「檢查更新」走同一路径。
+- `AndroidManifest` 的 `INTERNET` 权限**只**用于上述更新检查，其余功能仍全程离线。
 
 ### 发 Release
 
@@ -328,6 +333,7 @@ debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`�
    顺带：这次重写也把历史上的 `.kotlin/errors/errors-*.log`（含建置机家目录路径）一并抹掉了。
 
 9. **lint 目前 0 errors / 24 warnings，全部属于「已知可接受」**：7 条 GradleDependency（3 条应用依赖 + 4 条测试依赖/BOM 的版本提示，版本有意固定）、10 条启动图标形状、5 条 round 图标与方图标内容重复、2 条自适应图标缺 monochrome。发版不阻塞；要清掉它们需单独评估图标品牌与依赖升级，不要顺手改。
+10. **本 App 唯一的联网用途是「檢查更新」。** 启动时与「關於」面板手动点按时会 GET `https://api.github.com/repos/xiang9916/SiongDict/releases/latest`（8 秒超时、失败静默、不自动下载安装，见 ADR-0009）；`INTERNET` 权限只为此存在。除此之外全部离线，不要为其他功能加联网。
 
 ---
 
