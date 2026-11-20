@@ -60,8 +60,8 @@ data class SearchUiState(
  * [result] 是 [ClusterEngine.analyze] 的产物；[edges] 是画布连线（每点前 2 条正相似边），
  * 由 ViewModel 额外用 [computeSimilarity] 算出——分析结果本身不含相似度矩阵。
  *
- * [selectedK] 为 null 表示「自動」：使用分析给出的 [ClusterAnalysisResult.optimalK]；
- * 非 null 时只切换显示的分区，不重新跑聚类。
+ * [selectedK] 为 null 表示「自動」：使用社群偵測给出的分区 [ClusterAnalysisResult.communities]；
+ * 非 null 时只切换显示 UPGMA 的分区，不重新跑聚类。
  */
 data class ClusterUiState(
     val visible: Boolean = false,
@@ -75,17 +75,24 @@ data class ClusterUiState(
     val maxMinTags: Int = 1,
     val selectedLang: String? = null
 ) {
-    /** 当前显示的分区：优先 [selectedK]，否则自动取 optimalK；找不到时退回第一个分区。 */
+    /**
+     * 当前显示的分区：「自動」（[selectedK] == null）直接用社群偵測结果
+     * [ClusterAnalysisResult.communities]；手动选择时取 UPGMA 中 k 相同的分区，
+     * 找不到（例如社群数大于层次聚类记录的最大 k）时退回社群分区。
+     */
     val partition: ClusterPartition?
         get() {
             val data = result ?: return null
-            val target = selectedK ?: data.optimalK
-            return data.partitions.firstOrNull { it.k == target } ?: data.partitions.firstOrNull()
+            val manual = selectedK ?: return data.communities
+            return data.partitions.firstOrNull { it.k == manual } ?: data.communities
         }
 
-    /** 可选的最大分类数（分区序列的最大 k；无分区分时为 0）。 */
+    /** 可选的最大分类数（UPGMA 分区的最大 k 与社群数取大；无结果时为 0）。 */
     val maxK: Int
-        get() = result?.partitions?.maxOfOrNull { it.k } ?: 0
+        get() {
+            val data = result ?: return 0
+            return maxOf(data.partitions.maxOfOrNull { it.k } ?: 0, data.optimalK)
+        }
 
     /** 选中方言点所在的类别序号（用于高亮凸包与色块）；未选或找不到时为 null。 */
     val highlightedCluster: Int?

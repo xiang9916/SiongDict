@@ -4,10 +4,10 @@ package org.siongdict.app.analysis
  * 聚类分析的纯数据模型（纯 Kotlin，禁止引用 android.*）。
  *
  * 坐标、分区与统计量一次性算好后交给界面层；界面层不再回头做聚合，
- * 因此这里把「参与聚类的点」「各 k 的分区」「最优 k」「排除统计」全部显式列出。
+ * 因此这里把「参与聚类的点」「各 k 的分区」「社群分区」「排除统计」全部显式列出。
  */
 
-/** 参与聚类的一个方言点：画像 + 同源词统计 + 力导向布局坐标（均在 [0,1] 内）。 */
+/** 参与聚类的一个方言点：画像 + 同源词统计 + 三维力导向布局坐标（均在 [0,1] 内）。 */
 data class ClusterPoint(
     val lang: String,
     val division: String,
@@ -18,6 +18,8 @@ data class ClusterPoint(
     val entryCount: Int,
     val x: Float,
     val y: Float,
+    /** 第三维：3D 力导向布局的深度轴（画布用透视投影渲染）。 */
+    val z: Float,
 )
 
 /**
@@ -37,15 +39,19 @@ data class ClusterPartition(
 data class ClusterAnalysisResult(
     /** 参与聚类的点，按输入 profiles 的原顺序。 */
     val points: List<ClusterPoint>,
-    /** 各 k 的分区，按 k 升序；k 从 2 到 min(maxK, 点数 - 1)。 */
+    /** 各 k 的 UPGMA 分区，按 k 升序；k 从 2 到 min(maxK, 点数 - 1)。供「分類數」滑桿使用。 */
     val partitions: List<ClusterPartition>,
-    /** 轮廓系数最大的 k；没有分区时为 1。 */
+    /** 社群偵測（Louvain）给出的分区；「自動」模式显示的就是它。 */
+    val communities: ClusterPartition,
+    /** 社群分区的模组度 Q（范围约 -0.5..1）；无正相似边时为 0。 */
+    val modularity: Float,
+    /** 自动分群（社群偵測）的类数；没有点时退化为 1。 */
     val optimalK: Int,
-    /** 最优分区对应的平均轮廓系数；没有分区时为 0。 */
+    /** 社群分区的平均轮廓系数；没有点时 0。 */
     val optimalSilhouette: Float,
     /** 参与点收录的义项并集大小（distinct semanticTag）。 */
     val totalTags: Int,
-    /** 最优轮廓系数低于 [SPARSE_SILHOUETTE] 时为 true，提示结果不宜当真。 */
+    /** 模组度低于 [SPARSE_MODULARITY] 时为 true，提示社群结构偏弱、结果不宜当真。 */
     val sparse: Boolean,
     /** 可见方言点数（profiles.size，含未参与聚类的点）。 */
     val visibleDialects: Int,
@@ -55,7 +61,7 @@ data class ClusterAnalysisResult(
     val excludedSparse: Int,
 ) {
     companion object {
-        /** 轮廓系数低于该值视为「数据稀疏，聚类不可信」。 */
-        const val SPARSE_SILHOUETTE: Float = 0.25f
+        /** 模组度低于该值视为「社群结构偏弱」。 */
+        const val SPARSE_MODULARITY: Float = 0.15f
     }
 }

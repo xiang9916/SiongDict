@@ -358,13 +358,17 @@ class SearchViewModelTest {
         assertEquals(profileLoadsBefore, lexicon.profileLoads)
         assertEquals(membershipLoadsBefore, cognates.membershipLoads)
 
-        // 回到自动：分区改用 optimalK
+        // 回到自动：分区改用社群偵測结果（optimalK = 社群数）
         vm.setClusterCount(null)
         advanceUntilIdle()
         assertEquals(null, vm.clusterState.value.selectedK)
         assertEquals(
             vm.clusterState.value.result?.optimalK,
             vm.clusterState.value.partition?.k
+        )
+        assertEquals(
+            vm.clusterState.value.result?.communities,
+            vm.clusterState.value.partition
         )
     }
 

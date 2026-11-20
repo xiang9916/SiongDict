@@ -114,7 +114,7 @@ private fun clusterPairLess(
  * 单点丛集的点记 s = 0；其余点 a = 到同簇其它点的平均距离，
  * b = 到其它各簇平均距离的最小值，s = (b - a) / max(a, b)，max = 0 时记 0。
  */
-private fun averageSilhouette(
+internal fun averageSilhouette(
     distances: Array<DoubleArray>,
     clusters: List<List<Int>>,
 ): Float {

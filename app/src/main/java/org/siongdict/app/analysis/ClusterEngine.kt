@@ -7,14 +7,14 @@ import org.siongdict.app.data.DialectProfile
  * 聚类分析引擎（纯 Kotlin，禁止引用 android.*）。
  *
  * 输入是数据端口给出的「可见方言点画像 + 全库同源词成员」，输出一次性包含
- * 参与点（带坐标与统计）、各 k 分区、最优 k、稀疏标记与排除统计。
+ * 参与点（带三维坐标与统计）、UPGMA 各 k 分区、社群偵測分区、稀疏标记与排除统计。
  *
  * 数据处理顺序：
  * 1. 按 lang 聚合成员：tagCount = distinct semanticTag，entryCount = 记录条数；
  * 2. 有成员者为 active，其中 tagCount >= [minTags] 者才参与聚类；
- * 3. 对参与点算相似度矩阵，再做力导向布局与 UPGMA 层次聚类；
- * 4. 取轮廓系数最大的分区为 optimalK（平手取小 k；无分区时 1 / 0），
- *    optimalSilhouette < [ClusterAnalysisResult.SPARSE_SILHOUETTE] 时标记 sparse。
+ * 3. 对参与点算相似度矩阵，再做三维力导向布局、UPGMA 层次聚类与 Louvain 社群偵測；
+ * 4. 「自動」分群取社群偵測結果（optimalK = 社群数），模组度低于
+ *    [ClusterAnalysisResult.SPARSE_MODULARITY] 时标记 sparse。
  *
  * 纯函数：不持有状态、不做 IO；同一输入永远返回同一结果。
  */
@@ -52,9 +52,17 @@ object ClusterEngine {
 
         val langs = participating.map { it.lang }
         val similarity = computeSimilarity(memberships, langs)
-        val layout = forceLayout(similarity.distances)
+        val layout = forceLayout3D(similarity.distances)
         val partitions = averageLinkage(similarity.distances, maxK)
-        val best = bestPartition(partitions)
+
+        // 「自動」分群：加權圖上的模組度最大化（Louvain），而非輪廓係數選 k。
+        val communityResult = detectCommunities(similarity)
+        val communityClusters = clustersFromLabels(communityResult.labels)
+        val communityPartition = ClusterPartition(
+            k = communityClusters.size,
+            clusters = communityClusters,
+            silhouette = averageSilhouette(similarity.distances, communityClusters),
+        )
 
         val totalTags = buildSet {
             for (profile in participating) {
@@ -63,29 +71,42 @@ object ClusterEngine {
         }.size
 
         val points = participating.mapIndexed { index, profile ->
-            val (x, y) = layout.getOrNull(index) ?: (0.5f to 0.5f)
+            val coordinates = layout.getOrNull(index) ?: Triple(0.5f, 0.5f, 0.5f)
             ClusterPoint(
                 lang = profile.lang,
                 division = profile.division,
                 colorHex = profile.colorHex,
                 tagCount = tagsByLang[profile.lang]?.size ?: 0,
                 entryCount = entriesByLang[profile.lang] ?: 0,
-                x = x,
-                y = y,
+                x = coordinates.first,
+                y = coordinates.second,
+                z = coordinates.third,
             )
         }
 
-        val optimalSilhouette = best?.silhouette ?: 0f
         return ClusterAnalysisResult(
             points = points,
             partitions = partitions,
-            optimalK = best?.k ?: 1,
-            optimalSilhouette = optimalSilhouette,
+            communities = communityPartition,
+            modularity = communityResult.modularity.toFloat(),
+            optimalK = communityPartition.k.coerceAtLeast(1),
+            optimalSilhouette = communityPartition.silhouette,
             totalTags = totalTags,
-            sparse = optimalSilhouette < ClusterAnalysisResult.SPARSE_SILHOUETTE,
+            sparse = communityResult.modularity < ClusterAnalysisResult.SPARSE_MODULARITY,
             visibleDialects = profiles.size,
             excludedNoCognates = profiles.size - activeCount,
             excludedSparse = activeCount - participating.size,
         )
     }
 }
+
+/**
+ * 把「每点一个类别号」翻成 [ClusterPartition] 的簇列表：
+ * 簇内成员索引升序、簇之间按最小成员索引升序。
+ */
+internal fun clustersFromLabels(labels: List<Int>): List<List<Int>> =
+    labels.indices
+        .groupBy { labels[it] }
+        .values
+        .map { it.toList() }
+        .sortedBy { it.first() }

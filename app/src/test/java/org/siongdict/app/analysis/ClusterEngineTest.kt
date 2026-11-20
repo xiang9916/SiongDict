@@ -29,16 +29,21 @@ class ClusterEngineTest {
         assertEquals(4, result.visibleDialects)
         assertEquals(1, result.excludedNoCognates)
         assertEquals(2, result.excludedSparse)
-        // 只剩甲参与：单点布局回落到画布中心，不产生分区。
+        // 只剩甲参与：单点布局回落到立方体中心，不产生 UPGMA 分区。
         assertEquals(listOf("甲"), result.points.map { it.lang })
         val only = result.points.single()
         assertEquals(2, only.tagCount)
         assertEquals(2, only.entryCount)
         assertEquals(0.5f, only.x, 0f)
         assertEquals(0.5f, only.y, 0f)
+        assertEquals(0.5f, only.z, 0f)
         assertEquals(2, result.totalTags)
+        // 单点自成一群：optimalK 兜底为 1，轮廓系数无定义记 0。
         assertEquals(1, result.optimalK)
+        assertEquals(1, result.communities.k)
         assertEquals(0f, result.optimalSilhouette, 0f)
+        // 没有正相似边 → 模组度 0 → 判为稀疏。
+        assertEquals(0f, result.modularity, 1e-6f)
         assertTrue(result.sparse)
         assertTrue(result.partitions.isEmpty())
     }
@@ -66,9 +71,20 @@ class ClusterEngineTest {
         assertEquals(0, result.excludedNoCognates)
         assertEquals(0, result.excludedSparse)
         assertEquals(2, result.totalTags)
+        // 两对内部相似度 1、跨对相似度 0：社群偵測应恰好分成两群。
         assertEquals(2, result.optimalK)
+        assertEquals(2, result.communities.k)
+        assertEquals(2, result.communities.clusters.size)
+        // 每条边权 1、共 2 条边，完美二分 → Q = 0.5。
+        assertEquals(0.5f, result.modularity, 1e-4f)
         assertEquals(1.0f, result.optimalSilhouette, 1e-4f)
         assertFalse(result.sparse)
+        // 社群分区与层次聚类的 k=2 分区应当一致（同一批两对点）。
+        val hierarchical = result.partitions.firstOrNull { it.k == 2 }
+        assertEquals(
+            result.communities.clusters.map { it.toSet() }.toSet(),
+            hierarchical?.clusters?.map { it.toSet() }?.toSet(),
+        )
 
         val first = result.points.first()
         assertEquals("湘南", first.division)
@@ -76,7 +92,11 @@ class ClusterEngineTest {
         assertEquals(1, first.tagCount)
         assertEquals(1, first.entryCount)
         assertTrue(
-            result.points.all { it.x.isFinite() && it.x in 0f..1f && it.y.isFinite() && it.y in 0f..1f }
+            result.points.all {
+                it.x.isFinite() && it.x in 0f..1f &&
+                    it.y.isFinite() && it.y in 0f..1f &&
+                    it.z.isFinite() && it.z in 0f..1f
+            }
         )
     }
 

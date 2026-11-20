@@ -20,12 +20,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -141,6 +143,7 @@ private fun ClusterAnalysisBody(
 ) {
     val maxK = state.maxK
     val optimalK = result.optimalK
+    var showLabels by remember(result) { mutableStateOf(true) }
 
     Column(
         modifier = Modifier
@@ -160,14 +163,19 @@ private fun ClusterAnalysisBody(
         )
         Text(
             text = disp(
-                "最佳分群 K = ${optimalK}（輪廓係數 ${formatScore(result.optimalSilhouette)}）"
+                "自動分群 K = ${optimalK}（社群偵測，模組度 ${formatScore(result.modularity)}）"
             ),
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium
         )
+        Text(
+            text = disp("同分群的輪廓係數 ${formatScore(result.optimalSilhouette)}，僅供對照。"),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         if (result.sparse) {
             Text(
-                text = disp("資料稀疏（輪廓係數 < 0.25），分群結果僅供參考。"),
+                text = disp("資料稀疏（模組度 < 0.15），分群結果僅供參考。"),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.error
             )
@@ -222,16 +230,32 @@ private fun ClusterAnalysisBody(
                 }
             }
         } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(disp("顯示名稱"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        disp("單指旋轉 · 雙指縮放平移 · 雙擊復位"),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = showLabels, onCheckedChange = { showLabels = it })
+            }
             ClusterMap(
                 result = result,
                 partition = state.partition,
                 edges = state.edges,
                 selectedLang = state.selectedLang,
                 highlightedCluster = state.highlightedCluster,
+                showLabels = showLabels,
                 onSelect = onSelectPoint,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp)
+                    .height(360.dp)
             )
         }
 
@@ -289,9 +313,9 @@ private fun ClusterAnalysisBody(
         Text(
             text = disp(
                 "相似度按共同義項計分：共享同源詞組 +1、無共享 −1，範圍 −1..1；" +
-                    "畫布距離由 (1 − 相似度) / 2 的差異矩陣經力導向排版得出。" +
-                    "節點顏色為音典顏色，虛線凸包與色塊為聚類類別，連線為每個方言點前 2 條正相似邊。" +
-                    "手勢：雙指縮放、單指平移、點選節點。"
+                    "畫布是三維力導向排版後的透視投影：單指拖動旋轉視角、雙指捏合縮放並平移、雙擊復原。" +
+                    "「自動」分群用加權圖的社群偵測（模組度最大化），分類數滑桿只切換層次聚類的分區、不重算。" +
+                    "節點顏色為音典顏色，虛線凸包與色塊為聚類類別，連線為每個方言點前 2 條正相似邊。"
             ),
             fontSize = 12.sp,
             lineHeight = 18.sp,
@@ -325,7 +349,7 @@ private fun ClusterCountControl(
     ) {
         Text(
             text = disp(
-                if (automatic) "分類數：自動（K = ${optimalK.coerceIn(2, maxK)}）" else "分類數：K = ${selectedK ?: optimalK}"
+                if (automatic) "分類數：自動（K = $optimalK）" else "分類數：K = ${selectedK ?: optimalK}"
             ),
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium

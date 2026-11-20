@@ -2,8 +2,8 @@ package org.siongdict.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,13 +11,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -69,14 +70,30 @@ internal fun buildClusterEdges(similarity: DialectSimilarity, perPoint: Int = 2)
     return weights.map { (key, weight) -> ClusterEdge((key / n).toInt(), (key % n).toInt(), weight) }
 }
 
+/** 单指旋转灵敏度：每像素多少度。 */
+private const val ROTATE_DEGREES_PER_PX = 0.4f
+
+/** 双击判定窗口（毫秒）。 */
+private const val DOUBLE_TAP_WINDOW_MS = 300L
+
+/** 轻点判定窗口（毫秒）：超过则视为长按，不选中。 */
+private const val TAP_WINDOW_MS = 400L
+
+/** 标签数量上限（点数多时按深度取最近的一批）。 */
+private const val MAX_LABELS = 80
+
+/** 点数不超过该值时标签全显示、不做去重叠。 */
+private const val ALL_LABELS_THRESHOLD = 40
+
 /**
- * 聚类力导向画布。
+ * 聚类三维力导向画布。
  *
- * 画序：各类凸包（调色盘填色 0.10、虚线 0.55）→ 每点前 2 条正相似边 → 节点
- * （音典颜色，双色用线性渐变）→ 标签（点数 <= 40 显示全部語言名，否则只显示选中点与类别编号）。
+ * 画序：各类凸包（投影后的 2D 形状，调色盘填色 0.10、虚线 0.55）→ 每点前 2 条正相似边
+ * → 节点（按深度从远到近画，音典颜色，双色用线性渐变，选中点加白圈）→ 标签。
  *
- * 手势：双指缩放 1..8、单指平移（缩放以画布中心为基准）、点选 16dp 内的最近节点，
- * 点空白处取消选中。所有坐标都从 ClusterPoint.x/y 的 [0,1] 归一化空间映射到画布像素。
+ * 手势：**单指拖动旋转**（左右改 yaw、上下改 pitch，pitch 夹在 ±80°）、
+ * **双指捏合缩放 0.6–4 并拖动平移**、**轻点选中 16dp 内最近节点**、**双击复位视角**。
+ * 标签默认显示：点数 ≤ 40 全显；否则按深度从近到远贪心去重叠，上限 80 个；选中点始终显示。
  */
 @Composable
 internal fun ClusterMap(
@@ -85,6 +102,7 @@ internal fun ClusterMap(
     edges: List<ClusterEdge>,
     selectedLang: String?,
     highlightedCluster: Int?,
+    showLabels: Boolean,
     onSelect: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,17 +116,31 @@ internal fun ClusterMap(
         color = MaterialTheme.colorScheme.primary,
     )
 
-    // 结果变化时重置缩放/平移，避免沿用上一批点的视窗。
+    // 结果变化时重置视角，避免沿用上一批点的视窗。
     val points = result.points
-    var scale by remember(points) { mutableFloatStateOf(1f) }
+    var yaw by remember(points) { mutableFloatStateOf(DEFAULT_YAW_DEG) }
+    var pitch by remember(points) { mutableFloatStateOf(DEFAULT_PITCH_DEG) }
+    var zoom by remember(points) { mutableFloatStateOf(1f) }
     var pan by remember(points) { mutableStateOf(Offset.Zero) }
-    val currentScale by rememberUpdatedState(scale)
-    val currentPan by rememberUpdatedState(pan)
-    val currentPoints by rememberUpdatedState(points)
-    val currentOnSelect by rememberUpdatedState(onSelect)
+    var lastTapAt by remember(points) { mutableLongStateOf(0L) }
 
     val tapRadius = with(density) { 16.dp.toPx() }
     val mapPadding = with(density) { 8.dp.toPx() }
+
+    fun project(point: ClusterPoint, canvas: Size, currentYaw: Float, currentPitch: Float): ProjectedPoint =
+        projectPoint(
+            x = point.x,
+            y = point.y,
+            z = point.z,
+            yawDeg = currentYaw,
+            pitchDeg = currentPitch,
+            width = canvas.width,
+            height = canvas.height,
+            padding = mapPadding,
+            zoom = zoom,
+            panX = pan.x,
+            panY = pan.y,
+        )
 
     Box(
         modifier = modifier
@@ -119,47 +151,117 @@ internal fun ClusterMap(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(points) {
-                    detectTapGestures { tap ->
-                        val canvasSize = Size(size.width.toFloat(), size.height.toFloat())
-                        var bestIndex = -1
-                        var bestDistance = Float.MAX_VALUE
-                        currentPoints.forEachIndexed { index, point ->
-                            val center = toScreen(point, canvasSize, mapPadding, currentScale, currentPan)
-                            val distance = (center - tap).getDistance()
-                            if (distance < bestDistance) {
-                                bestDistance = distance
-                                bestIndex = index
+                    val touchSlop = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startTime = System.currentTimeMillis()
+                        var lastCentroid = down.position
+                        var moved = false
+                        var pointerCount = 1
+                        var previousPointerCount = 1
+                        var pinchStartSpan = -1f
+                        var pinchStartZoom = zoom
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            pointerCount = pressed.size
+                            var sum = Offset.Zero
+                            for (change in pressed) sum += change.position
+                            val centroid = sum / pointerCount.toFloat()
+                            if (!moved && (centroid - down.position).getDistance() > touchSlop) {
+                                moved = true
+                            }
+                            if (pointerCount > 1) moved = true
+
+                            // 手指数量变化的这一帧质心会跳一下（例如双指抬起一指），
+                            // 直接把基准重置到当前质心，避免视角/平移被拽飞。
+                            if (pointerCount != previousPointerCount) {
+                                previousPointerCount = pointerCount
+                                lastCentroid = centroid
+                                pinchStartSpan = -1f
+                            }
+
+                            if (moved) {
+                                val delta = centroid - lastCentroid
+                                if (pointerCount == 1) {
+                                    yaw += delta.x * ROTATE_DEGREES_PER_PX
+                                    pitch = (pitch - delta.y * ROTATE_DEGREES_PER_PX)
+                                        .coerceIn(-MAX_PITCH_DEG, MAX_PITCH_DEG)
+                                } else {
+                                    val span = if (pressed.size >= 2) {
+                                        (pressed[0].position - pressed[1].position).getDistance()
+                                    } else {
+                                        0f
+                                    }
+                                    if (span > 0f) {
+                                        if (pinchStartSpan <= 0f) {
+                                            pinchStartSpan = span
+                                            pinchStartZoom = zoom
+                                        }
+                                        zoom = (pinchStartZoom * (span / pinchStartSpan))
+                                            .coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                    }
+                                    pan += delta
+                                }
+                                event.changes.forEach { it.consume() }
+                            }
+                            lastCentroid = centroid
+                        }
+
+                        val now = System.currentTimeMillis()
+                        val duration = now - startTime
+                        if (!moved && duration <= TAP_WINDOW_MS) {
+                            if (now - lastTapAt <= DOUBLE_TAP_WINDOW_MS) {
+                                // 双击：复位视角。
+                                yaw = DEFAULT_YAW_DEG
+                                pitch = DEFAULT_PITCH_DEG
+                                zoom = 1f
+                                pan = Offset.Zero
+                                lastTapAt = 0L
+                            } else {
+                                lastTapAt = now
+                                val canvas = Size(size.width.toFloat(), size.height.toFloat())
+                                var bestIndex = -1
+                                var bestDistance = Float.MAX_VALUE
+                                for ((index, point) in points.withIndex()) {
+                                    val projected = project(point, canvas, yaw, pitch)
+                                    val distance = (Offset(projected.x, projected.y) - down.position)
+                                        .getDistance()
+                                    if (distance < bestDistance) {
+                                        bestDistance = distance
+                                        bestIndex = index
+                                    }
+                                }
+                                onSelect(
+                                    if (bestIndex >= 0 && bestDistance <= tapRadius) {
+                                        points[bestIndex].lang
+                                    } else {
+                                        null
+                                    }
+                                )
                             }
                         }
-                        val lang = if (bestIndex >= 0 && bestDistance <= tapRadius) {
-                            currentPoints[bestIndex].lang
-                        } else {
-                            null
-                        }
-                        currentOnSelect(lang)
-                    }
-                }
-                .pointerInput(points) {
-                    detectTransformGestures { _, panChange, zoom, _ ->
-                        val next = (scale * zoom).coerceIn(1f, 8f)
-                        // 缩回原始大小时同时把平移归零，避免用户迷路。
-                        pan = if (next <= 1f) Offset.Zero else pan + panChange
-                        scale = next
                     }
                 }
         ) {
             val count = points.size
             if (count == 0) return@Canvas
-            val screenPoints = points.map { toScreen(it, size, mapPadding, scale, pan) }
-            val nodeRadius = sqrt(size.width * size.height / count)
+            val canvas = size
+            val projected = points.map { project(it, canvas, yaw, pitch) }
+            val baseRadius = sqrt(size.width * size.height / count)
                 .coerceIn(2.5.dp.toPx(), 6.dp.toPx())
+            val radiusOf = { index: Int ->
+                baseRadius * depthRadiusScale(projected[index].depth)
+            }
             val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()), 0f)
             val selectedIndex = points.indexOfFirst { it.lang == selectedLang }
 
             // 1) 各类凸包：高亮类别填色更深、描边更实。
             partition?.clusters?.forEachIndexed { index, cluster ->
                 if (cluster.size < 3) return@forEachIndexed
-                val hull = convexHull(cluster.mapNotNull { screenPoints.getOrNull(it) })
+                val hull = convexHull(cluster.mapNotNull { projected.getOrNull(it)?.let { p -> Offset(p.x, p.y) } })
                 if (hull.size < 3) return@forEachIndexed
                 val path = Path().apply {
                     moveTo(hull.first().x, hull.first().y)
@@ -186,22 +288,27 @@ internal fun ClusterMap(
                 )
             }
 
-            // 2) 正相似边：权重越高越明显。
+            // 2) 正相似边：权重越高越明显，深度越远越淡。
             for (edge in edges) {
-                val from = screenPoints.getOrNull(edge.a) ?: continue
-                val to = screenPoints.getOrNull(edge.b) ?: continue
-                val alpha = (0.12f + 0.38f * edge.weight.coerceIn(0f, 1f)).coerceIn(0f, 0.5f)
+                val from = projected.getOrNull(edge.a) ?: continue
+                val to = projected.getOrNull(edge.b) ?: continue
+                val depthFactor = depthRadiusScale((from.depth + to.depth) / 2f) / 1.35f
+                val alpha = ((0.10f + 0.30f * edge.weight.coerceIn(0f, 1f)) * depthFactor)
+                    .coerceIn(0f, 0.5f)
                 drawLine(
                     color = edgeColor.copy(alpha = alpha),
-                    start = from,
-                    end = to,
+                    start = Offset(from.x, from.y),
+                    end = Offset(to.x, to.y),
                     strokeWidth = 0.8.dp.toPx(),
                 )
             }
 
-            // 3) 节点：音典颜色；双色用线性渐变；选中点加白圈。
-            points.forEachIndexed { index, point ->
-                val center = screenPoints[index]
+            // 3) 节点：按深度从远到近画（近的盖住远的）。
+            val drawOrder = points.indices.sortedBy { projected[it].depth }
+            for (index in drawOrder) {
+                val point = points[index]
+                val center = Offset(projected[index].x, projected[index].y)
+                val nodeRadius = radiusOf(index)
                 val colors = parseColorSpec(point.colorHex).map { Color(it) }
                 if (colors.size >= 2) {
                     drawCircle(
@@ -232,19 +339,34 @@ internal fun ClusterMap(
                 }
             }
 
-            // 4) 标签：点数少时全显示；否则只在类别质心标编号与选中点标名字。
-            if (count <= 40) {
-                points.forEachIndexed { index, point ->
-                    drawNodeLabel(
-                        textMeasurer = textMeasurer,
-                        text = point.lang,
-                        anchor = screenPoints[index] + Offset(0f, nodeRadius + 2.dp.toPx()),
-                        style = labelStyle,
+            // 4) 标签。
+            if (showLabels) {
+                val ordered = points.indices.sortedByDescending { projected[it].depth }
+                val placed = mutableListOf<Rect>()
+                var drawn = 0
+                for (index in ordered) {
+                    if (count > ALL_LABELS_THRESHOLD && drawn >= MAX_LABELS) break
+                    val anchor = Offset(
+                        projected[index].x,
+                        projected[index].y + radiusOf(index) + 2.dp.toPx(),
                     )
+                    val layout = textMeasurer.measure(points[index].lang, labelStyle)
+                    val rect = Rect(
+                        offset = Offset(anchor.x - layout.size.width / 2f, anchor.y),
+                        size = Size(layout.size.width.toFloat(), layout.size.height.toFloat()),
+                    ).inflate(1.dp.toPx())
+                    if (count > ALL_LABELS_THRESHOLD && placed.any { it.overlaps(rect) }) continue
+                    placed.add(rect)
+                    drawText(
+                        textLayoutResult = layout,
+                        topLeft = Offset(anchor.x - layout.size.width / 2f, anchor.y),
+                    )
+                    drawn++
                 }
             } else {
+                // 隐藏名称时：类别质心标编号，选中点标名字（保持旧版行为）。
                 partition?.clusters?.forEachIndexed { index, cluster ->
-                    val clusterPoints = cluster.mapNotNull { screenPoints.getOrNull(it) }
+                    val clusterPoints = cluster.mapNotNull { projected.getOrNull(it) }
                     if (clusterPoints.isEmpty()) return@forEachIndexed
                     var sumX = 0f
                     var sumY = 0f
@@ -255,35 +377,20 @@ internal fun ClusterMap(
                     val centroid = Offset(sumX / clusterPoints.size, sumY / clusterPoints.size)
                     drawNodeLabel(textMeasurer, (index + 1).toString(), centroid, clusterLabelStyle)
                 }
-                if (selectedIndex >= 0) {
-                    drawNodeLabel(
-                        textMeasurer = textMeasurer,
-                        text = points[selectedIndex].lang,
-                        anchor = screenPoints[selectedIndex] + Offset(0f, nodeRadius + 2.dp.toPx()),
-                        style = labelStyle,
-                    )
-                }
+            }
+            if (selectedIndex >= 0) {
+                drawNodeLabel(
+                    textMeasurer = textMeasurer,
+                    text = points[selectedIndex].lang,
+                    anchor = Offset(
+                        projected[selectedIndex].x,
+                        projected[selectedIndex].y + radiusOf(selectedIndex) + 2.dp.toPx(),
+                    ),
+                    style = labelStyle,
+                )
             }
         }
     }
-}
-
-/** 归一化坐标 → 画布像素：先按 padding 铺满画布，再以画布中心缩放并平移。 */
-private fun toScreen(
-    point: ClusterPoint,
-    size: Size,
-    padding: Float,
-    zoom: Float,
-    pan: Offset,
-): Offset {
-    val centerX = size.width / 2f
-    val centerY = size.height / 2f
-    val baseX = padding + point.x.coerceIn(0f, 1f) * (size.width - 2f * padding)
-    val baseY = padding + point.y.coerceIn(0f, 1f) * (size.height - 2f * padding)
-    return Offset(
-        centerX + (baseX - centerX) * zoom + pan.x,
-        centerY + (baseY - centerY) * zoom + pan.y,
-    )
 }
 
 /** 在 anchor 处居中画一段文字（水平居中、纵向从 anchor.y 开始）。 */
