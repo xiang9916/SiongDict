@@ -20,6 +20,10 @@ data class ClusterPoint(
     val y: Float,
     /** 第三维：3D 力导向布局的深度轴（画布用透视投影渲染）。 */
     val z: Float,
+    /** 方言点经度（info 表「經緯度」的左半）；缺失时为 null，地图页会跳过该点。 */
+    val lon: Double? = null,
+    /** 方言点纬度（info 表「經緯度」的右半）；缺失时为 null。 */
+    val lat: Double? = null,
 )
 
 /**
@@ -39,19 +43,25 @@ data class ClusterPartition(
 data class ClusterAnalysisResult(
     /** 参与聚类的点，按输入 profiles 的原顺序。 */
     val points: List<ClusterPoint>,
-    /** 各 k 的 UPGMA 分区，按 k 升序；k 从 2 到 min(maxK, 点数 - 1)。供「分類數」滑桿使用。 */
+    /**
+     * 候选分区（UPGMA 各 k + Louvain 多解析度），按 k 升序、每个 k 只留轮廓系数最高者。
+     * 供「分類數」滑桿手動選擇；滑桿只切換分區、不重算。
+     */
     val partitions: List<ClusterPartition>,
-    /** 社群偵測（Louvain）给出的分区；「自動」模式显示的就是它。 */
+    /**
+     * 「自動」分群：候選裡所有叢集都不小於 minClusterSize 且輪廓係數最高的分區
+     * （見 `PartitionSearch.autoPartition`）；沒有點時退化为單簇 k = 1。
+     */
     val communities: ClusterPartition,
-    /** 社群分区的模组度 Q（范围约 -0.5..1）；无正相似边时为 0。 */
+    /** 自動分區的模组度 Q（范围约 -0.5..1，僅供對照）；無正相似邊時為 0。 */
     val modularity: Float,
-    /** 自动分群（社群偵測）的类数；没有点时退化为 1。 */
+    /** 自动分群的类数；没有点时退化为 1。 */
     val optimalK: Int,
-    /** 社群分区的平均轮廓系数；没有点时 0。 */
+    /** 自动分区的平均轮廓系数（選擇分區的依據）；没有点时 0。 */
     val optimalSilhouette: Float,
     /** 参与点收录的义项并集大小（distinct semanticTag）。 */
     val totalTags: Int,
-    /** 模组度低于 [SPARSE_MODULARITY] 时为 true，提示社群结构偏弱、结果不宜当真。 */
+    /** 自动分区的轮廓系数低于 [SPARSE_SILHOUETTE] 时为 true，提示分群结构偏弱、结果不宜当真。 */
     val sparse: Boolean,
     /** 可见方言点数（profiles.size，含未参与聚类的点）。 */
     val visibleDialects: Int,
@@ -61,7 +71,7 @@ data class ClusterAnalysisResult(
     val excludedSparse: Int,
 ) {
     companion object {
-        /** 模组度低于该值视为「社群结构偏弱」。 */
-        const val SPARSE_MODULARITY: Float = 0.15f
+        /** 自動分区的輪廓係數低于该值视为「分群結構偏弱」。 */
+        const val SPARSE_SILHOUETTE: Float = 0.10f
     }
 }

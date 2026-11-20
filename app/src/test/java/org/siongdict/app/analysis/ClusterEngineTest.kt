@@ -2,6 +2,7 @@ package org.siongdict.app.analysis
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.siongdict.app.data.CognateMembership
@@ -136,6 +137,27 @@ class ClusterEngineTest {
         val result = ClusterEngine.analyze(profiles, memberships, minTags = 2)
         assertEquals(listOf("甲", "乙", "丙", "丁"), result.points.map { it.lang })
         assertEquals(1, result.excludedSparse)
+    }
+
+    @Test
+    fun carriesCoordinatesIntoPoints() {
+        val profiles = listOf(
+            DialectProfile("甲", "湘北", "#111111", sortKey = "甲", lon = 113.0, lat = 28.5),
+            DialectProfile("乙", "湘南", "#222222", sortKey = "乙"),
+        )
+        val memberships = listOf(
+            membership("甲", "Press_gin4", "Press"),
+            membership("乙", "Press_gin4", "Press"),
+        )
+
+        val result = ClusterEngine.analyze(profiles, memberships)
+
+        val first = result.points.single { it.lang == "甲" }
+        assertEquals(113.0, first.lon)
+        assertEquals(28.5, first.lat)
+        val second = result.points.single { it.lang == "乙" }
+        assertNull(second.lon)
+        assertNull(second.lat)
     }
 
     private fun profile(lang: String, division: String, colorHex: String) =

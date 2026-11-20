@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
@@ -61,6 +62,17 @@ internal fun ClusterAnalysisScreen(
     onMinTags: (Int) -> Unit,
     onSelectPoint: (String?) -> Unit
 ) {
+    // 「在地圖展示」是下一层界面：返回键先退出地图页，再退出聚类页。
+    var showMap by remember(state.result) { mutableStateOf(false) }
+    if (showMap && state.result != null) {
+        BackHandler(onBack = { showMap = false })
+        ClusterMapScreen(
+            state = state,
+            result = state.result,
+            onClose = { showMap = false }
+        )
+        return
+    }
     // 全屏页没有 Dialog 的返回键处理，这里显式接管：返回键 = 關閉。
     BackHandler(onBack = onDismiss)
     Surface(
@@ -128,7 +140,8 @@ internal fun ClusterAnalysisScreen(
                         result = state.result,
                         onClusterCount = onClusterCount,
                         onMinTags = onMinTags,
-                        onSelectPoint = onSelectPoint
+                        onSelectPoint = onSelectPoint,
+                        onOpenMap = { showMap = true }
                     )
                 }
             }
@@ -142,7 +155,8 @@ private fun ClusterAnalysisBody(
     result: ClusterAnalysisResult,
     onClusterCount: (Int?) -> Unit,
     onMinTags: (Int) -> Unit,
-    onSelectPoint: (String?) -> Unit
+    onSelectPoint: (String?) -> Unit,
+    onOpenMap: () -> Unit
 ) {
     val maxK = state.maxK
     val optimalK = result.optimalK
@@ -155,30 +169,17 @@ private fun ClusterAnalysisBody(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 摘要
+        // 摘要：只保留一行加粗的分群质量指标。
         Text(
             text = disp(
-                "可見方言點 ${result.visibleDialects} 個 · 義項 ${result.totalTags} 個" +
-                    " · 無同源詞排除 ${result.excludedNoCognates} · 義項不足排除 ${result.excludedSparse}"
+                "模組度 ${formatScore(result.modularity)} · 輪廓係數 ${formatScore(result.optimalSilhouette)}"
             ),
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = disp(
-                "自動分群 K = ${optimalK}（社群偵測，模組度 ${formatScore(result.modularity)}）"
-            ),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Text(
-            text = disp("同分群的輪廓係數 ${formatScore(result.optimalSilhouette)}，僅供對照。"),
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            fontWeight = FontWeight.Bold
         )
         if (result.sparse) {
             Text(
-                text = disp("資料稀疏（模組度 < 0.15），分群結果僅供參考。"),
+                text = disp("分群結構偏弱（輪廓係數 < 0.10），結果僅供參考。"),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.error
             )
@@ -240,6 +241,14 @@ private fun ClusterAnalysisBody(
             ) {
                 Text(disp("顯示名稱"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 Switch(checked = showLabels, onCheckedChange = { showLabels = it })
+            }
+            OutlinedButton(
+                onClick = onOpenMap,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("cluster_map_open")
+            ) {
+                Text(disp("在地圖展示"))
             }
             ClusterMap(
                 result = result,
@@ -310,7 +319,8 @@ private fun ClusterAnalysisBody(
             text = disp(
                 "相似度按共同義項計分：共享同源詞組 +1、無共享 −1，範圍 −1..1；" +
                     "畫布是三維力導向排版後的透視投影：單指拖動旋轉視角、雙指捏合縮放並平移、雙擊復原。" +
-                    "「自動」分群用加權圖的社群偵測（模組度最大化），分類數滑桿只切換分群的分區、不重算。" +
+                    "「自動」分群在 UPGMA 各 k 與 Louvain 多解析度的候選分區裡，取「各叢集都夠大且輪廓係數最高」者；" +
+                    "分類數滑桿只切換候選分區、不重算。" +
                     "節點顏色為音典顏色，虛線凸包與色塊為聚類類別，連線為每個方言點前 2 條正相似邊。"
             ),
             fontSize = 12.sp,

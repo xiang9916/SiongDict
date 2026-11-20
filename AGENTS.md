@@ -23,7 +23,7 @@
 | 建置机绝对路径 | 被跟踪文件里的路径一律用占位写法（如 `/path/to/android-sdk`），真实建置机路径只出现在本机的未跟踪文件与命令里，**日志与例外堆叠同样按此处理**。 |
 | 签名凭证 | `*.keystore`、`*.jks`、`keystore.properties`、`signingkey.jks` 全在 `.gitignore`。本仓库**不含任何签名档**；签名文件只留在本机，由 `.gitignore` 覆盖。 |
 | 数据库二进制 | `*.db` 与 `*.db.bak-*` 在 `.gitignore`（理由见 §3）。V0.4.3 曾误入 5 个 `cognates.db.bak-*`，还被打进 APK；已于 V0.4-rc.4 清除。 |
-| 大型中间资料 | `tools/tables/`（MCPDict 上游字表，单档最大 47 MB）、`app/src/main/assets/maps/`、字型 `*.ttf/*.otf`、`*.geojson`、`*.tsv`、`*.apk`、旧 `assets/databases/` 都曾进过历史，**保持它们只在本机**（否则 `.git` 又会暴涨，得再重写一次历史，见 §7.8）。 |
+| 大型中间资料 | `tools/tables/`（MCPDict 上游字表，单档最大 47 MB）、地图上游原件 `MCPDict-master/app/src/main/assets/maps/china.json`（约 928 KB）与任何原始 `*.geojson`、字型 `*.ttf/*.otf`、`*.tsv`、`*.apk`、旧 `assets/databases/` 都曾进过历史，**保持它们只在本机**（否则 `.git` 又会暴涨，得再重写一次历史，见 §7.8）。仓库里的 `app/src/main/assets/maps/` 只放需求用到的派生底图 `provinces.json`（61,756 B；20 省／44 环／3,253 顶点，由 `tools/build_map.py` 从上游 `china.json` 裁切简化，见 ADR-0010）；上游 `china.json` 与原始 geojson 一律不进库。 |
 | Release notes | 它挂在 GitHub 上、不在仓库里，但同样按上表自查。 |
 
 发版前自查（除 `.gitignore` 自身列举关键字属预期命中外，其余应零命中）：
@@ -59,12 +59,17 @@ app/src/main/java/org/siongdict/app/
   data/UpdateChecker.kt      更新检查（GET GitHub releases/latest，8s 超时，纯函数可 JVM 测）
   data/UpdateState.kt        更新检查结果缓存（SharedPreferences + 进程内状态）
   data/EyeCare.kt            护眼模式开关（浅米色主题背景 0xFFF2EEE6）
-  analysis/ClusterModels.kt  聚类分析结果模型（点、分区、模组度阈值 0.15）
+  data/MapAssets.kt          離線底圖資產載入（assets/maps/provinces.json，壞檔回空表並 Log.w）
+  analysis/ClusterModels.kt  聚类分析结果模型（点含经纬度、候选分区、稀疏阈值轮廓系数 0.10）
   analysis/Similarity.kt     义项相似度 → 距离矩阵（共同义项 +1／−1／不计）
   analysis/HierarchicalClustering.kt UPGMA 平均链接 + 轮廓系数（k=2..min(10,n−1)，轮廓系数降为对照）
   analysis/CommunityDetection.kt 确定性 Louvain 社群偵測（边权 = 相似度，≤3 层，模组度增益 <1e-9 停）
+  analysis/PartitionSearch.kt 候选分區搜索（UPGMA 各 k + Louvain γ 网格 0.25–4 与每 k 二分 γ；每簇 ≥ max(2, ⌈5%n⌉) 才算可接受；自動挑輪廓係數最高，平手取小 k）
   analysis/ClusterLayout.kt  确定性三维力导向布局 + 分群锚点布局（Fibonacci 球面初值／锚点，无随机数，200 轮）
-  analysis/ClusterEngine.kt  聚类入口（筛选树切片、minTags 排除、模组度稀疏判定）
+  analysis/ClusterEngine.kt  聚类入口（筛选树切片、minTags 排除、候选分區 + 自動兩參數、輪廓係數稀疏判定、經緯度帶入）
+  analysis/MapModels.kt      地圖模型（LonLat、ProvinceShape 多環多邊形、MapSite、parseLonLat）
+  analysis/MapProjection.kt  Web Mercator 投影與視圖變換（mercatorY／inverseMercatorY、project／unproject、fitTransform）
+  analysis/Voronoi.kt        泰森多邊形（半平面裁剪，O(n²)，純函數）
   ui/SearchScreen.kt         检索主界面（搜索栏、模式切换、结果列表与右侧跳转条、方言筛选）
   ui/DialectTree.kt         方言筛选树（音典分区 → 三级节点、纯函数）
   ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
@@ -76,9 +81,11 @@ app/src/main/java/org/siongdict/app/
   ui/SearchViewModelFactory.kt 生产装配（LocalData → 三个端口注入 ViewModel）
   ui/CognateExport.kt        同源词 CSV 导出
   ui/ResearchDialog.kt       「研究」一级对话框（白底 Dialog + 右上「關閉」；目前只有聚类分析一项）
-  ui/ClusterAnalysisScreen.kt 聚类分析全屏页（非对话框；摘要、参数、图例、选中点详情）
+  ui/ClusterAnalysisScreen.kt 聚类分析全屏页（非对话框；一行摘要「模組度 · 輪廓係數」、参数、图例、选中点详情、在地圖展示入口）
   ui/ClusterMap.kt           聚类三维散点画布（透视投影、分群聚拢动画、单指旋转、双指缩放平移、双击复位、标签去重叠、点选）
   ui/ClusterProjection.kt    三维透视投影（相机距离／焦距／偏航俯仰常量、深度半径缩放，纯函数）
+  ui/ClusterMapScreen.kt     地圖展示全屏页（标题、標籤／多邊形开关、图例、點選詳情、返回聚類分析）
+  ui/GeoMapView.kt           地圖畫布（省界底圖 + 泰森多邊形 + 站點，手勢縮放平移，純 Compose Canvas）
   ui/ClusterColors.kt        类别调色盘与音典颜色解析（#RRGGBB／双色渐变）
 app/src/androidTest/java/org/siongdict/app/
   DataLayerTest.kt           数据层回归（只读连接、自愈重拷、异体展开、同源词、声调、重置、检索/重置串行化、方言画像、同源词成员）
@@ -89,7 +96,13 @@ app/src/test/java/org/siongdict/app/
   analysis/SimilarityTest.kt 义项相似度与距离（纯函数，JVM）
   analysis/HierarchicalClusteringTest.kt UPGMA／轮廓系数／平手规则（纯函数，JVM）
   analysis/ClusterLayoutTest.kt 布局确定性与边界（纯函数，JVM）
-  analysis/ClusterEngineTest.kt 筛选切片、minTags、稀疏判定（纯函数，JVM）
+  analysis/ClusterEngineTest.kt 筛选切片、minTags、稀疏判定、默认门槛、经纬度传递（纯函数，JVM）
+  analysis/PartitionSearchTest.kt 候选池、可接受性、自动挑选与平手规则（纯函数，JVM）
+  analysis/MapProjectionTest.kt Mercator 投影与视图变换往返（纯函数，JVM）
+  analysis/VoronoiTest.kt    泰森多边形裁剪与边界（纯函数，JVM）
+  analysis/GeoCoordinateTest.kt 经纬度解析与范围校验（纯函数，JVM）
+  data/VersionComparatorTest.kt 版本号比较（预发布／数字段，纯函数，JVM）
+  data/UpdateCheckerTest.kt  更新 tag 解析（纯函数，不联网，JVM）
   ui/ClusterColorsTest.kt    调色盘与颜色解析（纯函数，JVM）
   ui/DialectTreeTest.kt      方言筛选树（分区路径与叶子键，纯函数，JVM）
   ui/SearchViewModelTest.kt  检索装配/分组/筛选/代际守卫/聚类快照（fake 端口，JVM）
@@ -99,6 +112,8 @@ app/src/main/assets/
   databases/cognates.db     ★ 不入库，必须自行重建；缺失时 App 不会崩，「搜同源」自动停用
   variants.json             异体字对映，**已入库**（由 tools/build_variants.py 产生；繁体、简体、异体三种写法互查）
   t2s.json                  繁→简对映，**已入库**（由 tools/build_simplifier.py 产生；含本地「着」保护词表，见该脚本与 docs/adr/0003）
+  maps/provinces.json       離線省界底圖，**已入库**（61,756 B；20 省／44 環／3,253 頂點；由 tools/build_map.py 從 MCPDict china.json 裁切簡化，MIT，見 ADR-0010）
+  maps/README.md            底圖來源、授權與重生成步驟
   README.md / CHANGELOG.md  **已入库**；App 内「说明」页读的就是这两份，必须与仓库根目录的同名文件逐字节一致
 tools/                       资料管线（纯 Python 3 标准库，无第三方依赖、无 requirements.txt）
   build_db.py                MCPDict 字表 → siongdict.db
@@ -106,6 +121,7 @@ tools/                       资料管线（纯 Python 3 标准库，无第三�
   build_simplifier.py        OpenCC TSPhrases/TSCharacters → t2s.json（简体渲染）
   cognate_pipeline.py        桥字验证 → cognates.db
   ipa_parser.py              IPA 声母／韵母／声调切分，被 cognate_pipeline.py 导入
+  build_map.py               MCPDict china.json → assets/maps/provinces.json（bbox 100.2–119.7／21.5–33.5、容差 0.005°、4 位小数）
 publish/                     本机出包暂存，已 gitignore
 docs/                        开发文档：ADR（docs/adr）与长期参考资料（docs/reference，含 tone-relations.md 十六调关系表）
 ```
@@ -215,12 +231,13 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 「研究」不是检索模式，而是独立的对照工具：顶栏「研究」图标 → `ResearchDialog` → `ClusterAnalysisScreen`（全屏页，不套 Dialog）。全部在手机端计算，离线、不新增依赖。
 
-- **输入**：`Lexicon.dialectProfiles()`（`info` 表的 簡稱/音典分區/音典顏色/音典排序，491 点）+ `CognateBook.memberships()`（`cognates` 的 lang/cognate_group/semantic_tag，2,804 条）。首次打开在 IO 上读一次存快照；之后调参只重算、不再读库；重置数据库作废快照并关闭全屏页。
-- **范围**：先按**当地方言筛选树**切片（`selected == null` 全收，否则 `leafKey(division) ∈ selected`，与检索共用同一套前三段分区叶子键）；再排除没有同源词的点与义项数低于「最小义项数」的点。全屏页摘要显式列出「可见方言点 N · 义项 T · 无同源词排除 x · 义项不足排除 y」。2026-11-20 实测：491 点中默认排除 108 个无同源词的点，剩 383 点。
-- **算法**（`analysis/` 六个纯 Kotlin 文件）：义项 = `semantic_tag`；共同义项下共享至少一个 `cognate_group` 记 +1、都收录但无共享记 −1、缺义项不计；s = 总分／(|T| + λ)，λ = 2（收缩平均，s ∈ (−1,1)，共同义项越多同一比例越可信），距离 d = (1−s)/2（无共同义项时 d = 0.5）；**「自動」分群改为加权图社群偵測（确定性 Louvain，边权为相似度、≤3 层、模组度增益 <1e-9 停），optimalK = 社群数，sparse 判定改为模组度 < 0.15；轮廓系数仍计算但仅作对照（optimalSilhouette）**；布局改为三维力导向（Fibonacci 球面初值、归一化到单位立方体），画布做透视投影，支持单指旋转/双指缩放平移/双击复位；标签默认显示（≤40 点全显，否则按深度去重叠、上限 80）。**分群锚点布局 + 700ms 过渡动画**：先按当前分区的类号把同类点收缩到 Fibonacci 球面锚点附近（类号升序定锚点，类内按质心收缩、`spread = 0.35`，`anchorRadius = 0.35`），再由画布以 700 毫秒补间把点从旧坐标聚拢到新坐标——切换分类数时只重算分区与布局、不重跑聚类，聚拢过程可见。同一份资料坐标恒定。
-- **交互**：分类数滑桿只换分区、不重跑（`selectedK`，可回「自动」）；最小义项数滑桿松手后按快照重算，上限固定为快照中最大义项数（夹在 1..10），调高门槛不会缩水。**最小义项数的默认值由数据决定**：`ClusterEngine.defaultMinTags()` 在 1..上限 内取「自动分群」轮廓系数最大的门槛（平手取小），候选门槛须保留至少 50% 有同源词的点（`MIN_DEFAULT_COVERAGE`），否则轮廓系数会一路挑到只剩 10 点的门槛；2026-11-20 实测默认门槛 4（209/383 点、3 类、Q ≈ 0.1885，义项不足排除 174 点）。点节点看该点义项／条目数并高亮所属类别；画布支持单指旋转、双指 0.6–4 倍缩放与平移、双击复位视角。
+- **输入**：`Lexicon.dialectProfiles()`（`info` 表的 簡稱/音典分區/音典顏色/音典排序/經緯度，491 点，經緯度 491/491 有效）+ `CognateBook.memberships()`（`cognates` 的 lang/cognate_group/semantic_tag，2,804 条）。首次打开在 IO 上读一次存快照；之后调参只重算、不再读库；重置数据库作废快照并关闭全屏页。
+- **范围**：先按**当地方言筛选树**切片（`selected == null` 全收，否则 `leafKey(division) ∈ selected`，与检索共用同一套前三段分区叶子键）；再排除没有同源词的点与义项数低于「最小义项数」的点。全屏页摘要只留一行「模組度 · 輪廓係數」（旧的三行摘要已删除，明细看日志与图例）。2026-11-20 实测：491 点中默认排除 108 个无同源词的点，剩 383 点。
+- **算法**（`analysis/` 十个纯 Kotlin 文件）：义项 = `semantic_tag`；共同义项下共享至少一个 `cognate_group` 记 +1、都收录但无共享记 −1、缺义项不计；s = 总分／(|T| + λ)，λ = 2（收缩平均，s ∈ (−1,1)，共同义项越多同一比例越可信），距离 d = (1−s)/2（无共同义项时 d = 0.5）；**「自動」分群不再赌单一算法，而是先造候选池再挑**：候选 = UPGMA 各 k（2..min(10, n−1)）的分区 + 确定性 Louvain 在 γ 网格 0.25–4（10 档，边权 = 相似度、≤3 层、模组度增益 <1e-9 停）上的分区，并对每个 k 再二分 γ 6 步细化；**每个 k 只保留轮廓系数最高的候选**（平手优先 Louvain、再取小 γ），候选池按 k 升序。「自動」值 = 候选池里**每簇都不小于 `max(2, ⌈5%n⌉)`** 的候选中轮廓系数最高者（平手小 k → Louvain → 小 γ，`PartitionSearch`）；稀疏判定改为**轮廓系数 < 0.10**（`SPARSE_SILHOUETTE`），**模组度降为对照指标（`modularity`）**——按 Q 最大一定退化成 k=2 的粗切，不能用来选分类数。最小义项数的默认值也由数据定：`ClusterEngine.defaultMinTags()` 在 1..上限 内取「自动分群」轮廓系数最大的门槛，且该门槛须保留至少 50% 有同源词的点（`MIN_DEFAULT_COVERAGE`），否则轮廓系数会一路挑到只剩 10 点的门槛；该搜索只跑粗候选池（不做每 k 的 γ 二分，实测两者结果一致，二分会让开启延迟从约 6.5 秒增至约 20.5 秒）。**2026-11-20 仪器化实测（唯一可信值）**：门槛 1 时 383 点、自动 k=6、类别规模 61/108/75/62/31/46、轮廓 0.1587、Q ≈ 0.2723（仅对照）；默认门槛 4 时 209/383 点、自动 k=2、规模 178/31、轮廓 0.1972、Q ≈ 0.0997（仅对照），义项不足排除 174 点。布局改为三维力导向（Fibonacci 球面初值、归一化到单位立方体），画布做透视投影，支持单指旋转/双指缩放平移/双击复位；标签默认显示（≤40 点全显，否则按深度去重叠、上限 80）。**分群锚点布局 + 700ms 过渡动画**：先按当前分区的类号把同类点收缩到 Fibonacci 球面锚点附近（类号升序定锚点，类内按质心收缩、`spread = 0.35`，`anchorRadius = 0.35`），再由画布以 700 毫秒补间把点从旧坐标聚拢到新坐标——切换分类数时只重算分区与布局、不重跑聚类，聚拢过程可见。同一份资料坐标恒定。
+- **交互**：分类数滑桿只换分区、不重跑（`selectedK`，可回「自动」）；最小义项数滑桿松手后按快照重算，上限固定为快照中最大义项数（夹在 1..10），调高门槛不会缩水。**最小义项数的默认值由数据决定**（规则见上「算法」段）；2026-11-20 实测默认门槛 4（209/383 点，义项不足排除 174 点）。点节点看该点义项／条目数并高亮所属类别；画布支持单指旋转、双指 0.6–4 倍缩放与平移、双击复位视角。
+- **地图展示**：全屏页「顯示名稱」下方的「在地圖展示」按钮（`cluster_map_open`）→ `ClusterMapScreen`（`cluster_map_screen`），返回键先退地图、再退聚类页。底图是离线派生的 `assets/maps/provinces.json`（20 省／44 环／3,253 顶点，61,756 B，MCPDict `china.json` 裁切简化，MIT，见 ADR-0010），Web Mercator 投影后按站点经纬度画泰森多边形（`Voronoi.kt`，半平面裁剪 O(n²)）与站点点位，只画当前参与聚类的点（默认门槛 4 时 209 点；手动把门槛调到 1 时 383 点）。可切「標籤」与「多邊形」开关、点选站点看详情，手势缩放平移；全程离线，无图砖、无地图库。底图缺失时只画站点并提示「底圖資產缺失，僅顯示站點位置。」。
 - **配色**：节点用音典顏色（`#RRGGBB`／`#AARRGGBB`／逗号双色渐变），类别用固定 10 色调色盘（凸包填色与图例），两套不混用。
-- **复杂度**：O(n² + 成员条数)，n ≤ 383（有同源词的点），手机端毫秒到百毫秒级。
+- **复杂度**：O(n² + 成员条数)，n ≤ 383（有同源词的点），手机端毫秒到百毫秒级（候选池把聚类跑多次，仍是同阶）。
 - 决策与取舍见 `docs/adr/0008-cluster-analysis.md`。
 
 ## 6. 版本号与发版
@@ -270,22 +287,22 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-25 项仪器化测试（数据层 17 + 界面 8），需要模拟器或真机：
+26 项仪器化测试（数据层 17 + 界面 9），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 25/25
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 26/26
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
-- 另有 64 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、调色盘与方言树、版本比较与更新解析）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
+- 另有 87 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、候选分區搜索 7、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、Mercator 投影 6、泰森多邊形 6、經緯度 3、调色盘与方言树、版本比较与更新解析）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
 - 本次（0.5-alpha.2）新增 3 项仪器化测试（`dialectProfilesLoadFromInfo` 方言画像、`cognateMembershipsMatchDatabase` 同源词成员、`researchOpensClusterAnalysis` 研究入口）与 14 项 JVM 测试（相似度 3、层次聚类 3、布局 1、聚类引擎 2、调色盘 2、ViewModel 聚类 3）。
 - `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
-- 0.5-alpha.3 起新增「自动类数 ≥3 且模组度 > 0.2」的仪器化断言（`clusterAnalysisUsesCommunityDetection`）：用真实库跑一遍聚类，社群偵测退化回 k=2 或模组度过低都会亮红灯；同一测试还断言 `groupedLayout3D` 的类内平均距离小于类间质心距离（聚拢确实按分群分离），并用 `Log.i("ClusterTest", …)` 打印真实 k／Q／类别规模／类质心供 `adb logcat -d -s ClusterTest` 核对。
+- `clusterAnalysisUsesCommunityDetection` 用真实库跑两遍聚类（门槛 1 与默认门槛）：断言参与点数、自动类数 ≥3、`optimalK`／`optimalSilhouette` 与自动分区一致、**轮廓系数 > 0.10 且未标稀疏**、模组度落在 −0.5..1、**每个簇都不小于 `minClusterSize(n)`**、候选池按 k 升序且轮廓系数在 −1..1、每个点都带底图范围内的经纬度（100.2–119.7／21.5–33.5）、默认门槛为 4 且默认门槛下是 k=2（这是「可接受候选中轮廓最高」的正常结果，不是退化）、`groupedLayout3D` 类内平均距离小于类间质心距离。真实 k／轮廓系数／Q／类别规模／完整候选表／默认门槛结果全部用 `Log.i("ClusterTest", …)` 打印，跑完用 `adb logcat -d -s ClusterTest` 核对（2026-11-20 实测：门槛 1 → k=6、轮廓 0.1587；默认门槛 4 → k=2、轮廓 0.1972）。
 - 启动时会自动检查更新（`data/UpdateChecker.kt`，见 ADR-0009）：GET GitHub `releases/latest`，8 秒超时；失败静默、不阻断启动、不自动下载安装；结果缓存到 SharedPreferences，有新版本时「關於」图标旋转并在面板提示，点按打开 Release 页。手动「檢查更新」走同一路径。
 - `AndroidManifest` 的 `INTERNET` 权限**只**用于上述更新检查，其余功能仍全程离线。
 
@@ -335,6 +352,7 @@ debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`�
 
 9. **lint 目前 0 errors / 24 warnings，全部属于「已知可接受」**：7 条 GradleDependency（3 条应用依赖 + 4 条测试依赖/BOM 的版本提示，版本有意固定）、10 条启动图标形状、5 条 round 图标与方图标内容重复、2 条自适应图标缺 monochrome。发版不阻塞；要清掉它们需单独评估图标品牌与依赖升级，不要顺手改。
 10. **本 App 唯一的联网用途是「檢查更新」。** 启动时与「關於」面板手动点按时会 GET `https://api.github.com/repos/xiang9916/SiongDict/releases/latest`（8 秒超时、失败静默、不自动下载安装，见 ADR-0009）；`INTERNET` 权限只为此存在。除此之外全部离线，不要为其他功能加联网。
+11. **`app/src/main/assets/maps/provinces.json` 是派生产物，不要提交上游原件。** 它由 `tools/build_map.py` 从 MCPDict 的 `china.json` 裁切简化而来（bbox 100.2–119.7／21.5–33.5、容差 0.005°）；上游 `china.json`（约 928 KB）与任何原始 geojson 一律只留本机（§1）。要改底图就改脚本重跑，不要手改 JSON。地图页全程离线：别加线上图砖、第三方地图库或任何联网请求（唯一联网用途见下一条）。
 
 ---
 

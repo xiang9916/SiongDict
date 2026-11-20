@@ -3,6 +3,7 @@ package org.siongdict.app.data
 import android.database.Cursor
 import android.util.Log
 import org.json.JSONObject
+import org.siongdict.app.analysis.parseLonLat
 
 /**
  * 字音库（siongdict.db）的只读端口：FTS 检索、info 元数据、繁简异体展开。
@@ -126,10 +127,15 @@ internal class LocalLexicon(
 
     private fun loadProfiles(): List<DialectProfile> {
         val list = mutableListOf<DialectProfile>()
-        files.siongdict().rawQuery("SELECT 簡稱, 音典分區, 音典顏色, 音典排序 FROM info", null).use { cursor ->
+        files.siongdict().rawQuery(
+            "SELECT 簡稱, 音典分區, 音典顏色, 音典排序, 經緯度 FROM info",
+            null
+        ).use { cursor ->
             while (cursor.moveToNext()) {
                 val lang = cursor.getString(0) ?: continue
                 if (lang.isBlank()) continue
+                // 「經緯度」格式為 "lon,lat"；缺失或格式異常時留 null，地圖頁會跳過該點。
+                val coordinates = parseLonLat(cursor.getString(4))
                 list.add(
                     DialectProfile(
                         lang = lang,
@@ -137,6 +143,8 @@ internal class LocalLexicon(
                         division = cursor.getString(1) ?: "",
                         colorHex = cursor.getString(2) ?: "",
                         sortKey = cursor.getString(3) ?: "",
+                        lon = coordinates?.first,
+                        lat = coordinates?.second,
                     )
                 )
             }

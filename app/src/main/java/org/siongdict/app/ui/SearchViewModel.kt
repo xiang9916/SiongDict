@@ -60,8 +60,8 @@ data class SearchUiState(
  * [result] 是 [ClusterEngine.analyze] 的产物；[edges] 是画布连线（每点前 2 条正相似边），
  * 由 ViewModel 额外用 [computeSimilarity] 算出——分析结果本身不含相似度矩阵。
  *
- * [selectedK] 为 null 表示「自動」：使用社群偵測给出的分区 [ClusterAnalysisResult.communities]；
- * 非 null 时只切换显示 UPGMA 的分区，不重新跑聚类。
+ * [selectedK] 为 null 表示「自動」：使用候選搜索選出的分區 [ClusterAnalysisResult.communities]；
+ * 非 null 时只切換顯示候選分區（UPGMA 各 k 與 Louvain 多解析度裡每個 k 的最佳者），不重新跑聚類。
  */
 data class ClusterUiState(
     val visible: Boolean = false,

@@ -18,8 +18,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.siongdict.app.analysis.ClusterAnalysisResult
 import org.siongdict.app.analysis.ClusterEngine
 import org.siongdict.app.analysis.groupedLayout3D
+import org.siongdict.app.analysis.minClusterSize
 import org.siongdict.app.data.LocalData
 import org.siongdict.app.data.ToneFormatter
 import org.siongdict.app.ui.SearchUiState
@@ -1514,10 +1516,16 @@ class DataLayerTest {
     }
 
     /**
-     * 「自動」分群走加權圖社群偵測（Louvain），不再用轮廓系数选 k：
-     * 真实库上必须给出 >= 3 类且模组度 > 0.2，退化回 k=2 或 Q 过低都会亮红灯。
+     * 「自動」分群改為候選分區搜索（UPGMA 各 k + Louvain 多解析度 / 二分 γ）：
+     * 真實库上必須給出 k >= 3、輪廓係數 > 0.10（sparse 阈值），模組度僅作對照；
+     * 默認最小義項數由「輪廓係數最高 + 覆蓋率下限 50%」決定（用粗候選池挑選，正式 analyze 再二分細化）。
      *
-     * Log 行供验证员跑完仪器化后用 adb logcat -d -s ClusterTest 读取真实分群数与模组度。
+     * Log 行供驗證員跑完儀器化後用 adb logcat -d -s ClusterTest 讀取真實數字：
+     * k／輪廓係數／Q／類別規模／完整候選表／默認門槛與其分析結果。
+     *
+     * 注意：下方的 383／4／66／209／2／108／174 與 2026-11-20 儀器化 logcat 實測一致
+     * （門槛 1 → k=6、輪廓 0.1587；默認門槛 4 → k=2、178/31、輪廓 0.1972）。若上游資料變動
+     * 導致不符，先記錄實測值、回填文檔，不要為過而放寬斷言。
      */
     @Test
     fun clusterAnalysisUsesCommunityDetection() = runBlocking {
@@ -1525,15 +1533,25 @@ class DataLayerTest {
         d.maintenance.prepare()
         val profiles = d.lexicon.dialectProfiles()
         val memberships = d.cognateBook.memberships()
-        val result = ClusterEngine.analyze(profiles, memberships)
 
+        // 門槛 1：全部有同源詞的點（真實库 383 點）。
+        val result = ClusterEngine.analyze(profiles, memberships)
         Log.i(
             "ClusterTest",
-            "points=${result.points.size} k=${result.communities.k} Q=${result.modularity} " +
+            "points=${result.points.size} k=${result.communities.k} " +
+                "sil=${result.optimalSilhouette} Q=${result.modularity} " +
                 "sizes=${result.communities.clusters.map { it.size }}"
         )
+        Log.i(
+            "ClusterTest",
+            "candidates=" + result.partitions.joinToString { "k=${it.k}:sil=${it.silhouette}" }
+        )
+        Log.i(
+            "ClusterTest",
+            "minClusterSize(n=${result.points.size})=${minClusterSize(result.points.size)}"
+        )
 
-        // 最小义项数的默认值：由轮廓系数最大的门槛挑出，一并记进日志供文档回填。
+        // 默認最小義項數：輪廓係數最高 + 覆蓋率下限（至少 50% 有同源詞的點）。
         val maxMinTags = memberships.groupBy { it.lang }
             .values
             .maxOfOrNull { rows -> rows.map { it.semanticTag }.toSet().size }
@@ -1544,18 +1562,43 @@ class DataLayerTest {
             "默认最小义项数应落在 1..$maxMinTags（实际 $defaultMinTags）",
             defaultMinTags in 1..maxMinTags
         )
+        assertEquals("默認最小義項數應為 4（儀器化實測）", 4, defaultMinTags)
+        assertEquals("最大義項數應為 66（道縣梅花）", 66, maxMinTags)
 
-        // 默认门槛必须真的落在合法范围内，且真实库上不能退化成「只剩个位数点」。
         val atDefault = ClusterEngine.analyze(profiles, memberships, minTags = defaultMinTags)
+        val defaultSizes = atDefault.communities.clusters.map { it.size }
         Log.i(
             "ClusterTest",
-            "pointsAtDefault=" + atDefault.points.size + " k=" + atDefault.communities.k +
-                " Q=" + atDefault.modularity + " excludedSparse=" + atDefault.excludedSparse
+            "atDefault points=${atDefault.points.size} k=${atDefault.communities.k} " +
+                "sil=${atDefault.optimalSilhouette} Q=${atDefault.modularity} " +
+                "sizes=$defaultSizes excludedNoCognates=${atDefault.excludedNoCognates} " +
+                "excludedSparse=${atDefault.excludedSparse}"
+        )
+        assertEquals("默認門槛應參與 209 點（儀器化實測）", 209, atDefault.points.size)
+        assertEquals("默認門槛下自動類數應為 2（儀器化實測，規模 178/31）", 2, atDefault.communities.k)
+        assertTrue(
+            "默認門槛下輪廓係數應 > 0.15（實測約 0.1972，實際 ${atDefault.optimalSilhouette}）",
+            atDefault.optimalSilhouette > 0.15f
+        )
+        assertEquals(
+            "默認門槛下 optimalSilhouette 應等於自動分區輪廓係數",
+            atDefault.communities.silhouette,
+            atDefault.optimalSilhouette,
+            0f
+        )
+        assertFalse("默認門槛下不應標為稀疏", atDefault.sparse)
+        assertEquals("默認門槛應排除 108 個無同源詞的點", 108, atDefault.excludedNoCognates)
+        assertEquals("默認門槛應排除 174 個義項不足的點", 174, atDefault.excludedSparse)
+        assertEquals(
+            "參與點 + 兩類排除應等於可見方言點 491",
+            atDefault.visibleDialects,
+            atDefault.points.size + atDefault.excludedNoCognates + atDefault.excludedSparse
         )
         assertTrue(
-            "默认门槛下的参与点应 >= 100（实际 " + atDefault.points.size + "）",
-            atDefault.points.size >= 100
+            "默認門槛下每個簇都應 >= minClusterSize=${minClusterSize(atDefault.points.size)}（實際 $defaultSizes）",
+            defaultSizes.all { it >= minClusterSize(atDefault.points.size) }
         )
+        assertEquals("默認門槛下各簇規模之和應等於參與點數", atDefault.points.size, defaultSizes.sum())
 
         // 分群锚点布局：同类点应收紧到同一球面锚点附近，类内距应小于类间质心距。
         val labels = IntArray(result.points.size) { p ->
@@ -1600,19 +1643,53 @@ class DataLayerTest {
             "groupedLayout3D intra=$meanIntra between=$meanBetween centroids=$centroids"
         )
 
-        assertTrue("参与聚类的点应 > 100（真实库 383 点）", result.points.size > 100)
+        // —— 門槛 1 的不變量：候選分區 / 自動分區 / 稀疏判定 / 坐標 ——
+        assertEquals("參與聚類的點應為 383（真實库全部有同源詞的點）", 383, result.points.size)
         assertTrue(
-            "自动类数应 >= 3（实际 k=${result.communities.k}，Q=${result.modularity}）",
+            "自動類數應 >= 3（實際 k=${result.communities.k}）",
             result.communities.k >= 3
         )
-        assertTrue(
-            "模组度应 > 0.2（实际 Q=${result.modularity}）",
-            result.modularity > 0.2f
+        assertEquals("optimalK 應等於自動分區類數", result.communities.k, result.optimalK)
+        assertEquals(
+            "optimalSilhouette 應等於自動分區輪廓係數",
+            result.communities.silhouette,
+            result.optimalSilhouette,
+            0f
         )
-        assertEquals("optimalK 应等于社群分区类数", result.communities.k, result.optimalK)
-        assertFalse("真实库不应标为稀疏", result.sparse)
         assertTrue(
-            "分群锚点布局应把同类收紧：类内平均距 $meanIntra 应小于类间质心平均距 $meanBetween",
+            "自動分區輪廓係數應 > 0.10（實際 ${result.optimalSilhouette}）",
+            result.optimalSilhouette > ClusterAnalysisResult.SPARSE_SILHOUETTE
+        )
+        assertFalse("真實库不應標為稀疏", result.sparse)
+        assertTrue(
+            "模組度僅作對照，應落在 -0.5..1（實際 Q=${result.modularity}）",
+            result.modularity in -0.5f..1f
+        )
+        val clusterSizes = result.communities.clusters.map { it.size }
+        val minCluster = minClusterSize(result.points.size)
+        assertTrue(
+            "自動分區每個簇都應 >= minClusterSize=$minCluster（實際 $clusterSizes）",
+            clusterSizes.all { it >= minCluster }
+        )
+        assertTrue(
+            "候選分區輪廓係數應落在 -1..1（實際 ${result.partitions.map { it.silhouette }}）",
+            result.partitions.all { it.silhouette in -1f..1f }
+        )
+        assertEquals(
+            "候選分區應按 k 升序、每個 k 至多一個候選",
+            result.partitions.map { it.k }.sorted().distinct(),
+            result.partitions.map { it.k }
+        )
+        assertTrue("候選分區應包含至少 2 類", result.partitions.any { it.k >= 2 })
+        // 站點坐標：地圖頁要靠 info 表的經緯度，缺坐標會讓點在地圖上消失。
+        for (p in result.points) {
+            val lon = p.lon
+            val lat = p.lat
+            assertTrue("${p.lang} 應帶經度（實際 $lon）", lon != null && lon in 100.2..119.7)
+            assertTrue("${p.lang} 應帶緯度（實際 $lat）", lat != null && lat in 21.5..33.5)
+        }
+        assertTrue(
+            "分群锚点布局應把同類收緊：類內平均距 $meanIntra 應小於類間質心平均距 $meanBetween",
             meanIntra < meanBetween
         )
     }

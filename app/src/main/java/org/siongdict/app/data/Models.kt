@@ -60,7 +60,11 @@ data class DialectProfile(
     val lang: String,
     val division: String,
     val colorHex: String,
-    val sortKey: String
+    val sortKey: String,
+    /** 經度（info 表「經緯度」左半）；缺失為 null。 */
+    val lon: Double? = null,
+    /** 緯度（info 表「經緯度」右半）；缺失為 null。 */
+    val lat: Double? = null
 )
 
 /**

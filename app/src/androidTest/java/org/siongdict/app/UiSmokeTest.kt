@@ -28,9 +28,12 @@ import org.junit.runner.RunWith
  * **重复字检索不再因重复 key 崩溃**、三种模式、方言筛选对话框、关于面板、
  * 研究对话框，以及 0.5-alpha.3 起聚类分析改为全屏页（不再套 Dialog）。
  *
+ * 本轮起「聚類分析 → 在地圖展示」是再下一层的全屏页（ClusterMapScreen）：
+ * 地图页回收站式关闭（cluster_map_close）只退一层，聚类页仍在；再按 cluster_close
+ * 才回检索主界面。地图底图缺失时只画站点，测试只断言开关与页面存在，不碰渲染像素。
+ *
  * 关闭按钮一律按 testTag 定位：多个面板并存时「關閉」文本会重复，
- * 0.5-alpha.3 起 InfoDialog／方言篩選／研究／聚類分析分别有
- * info_close／filter_close／research_close／cluster_close。
+ * 依次为 info_close／filter_close／research_close／cluster_close／cluster_map_close。
  */
 @RunWith(AndroidJUnit4::class)
 class UiSmokeTest {
@@ -178,6 +181,60 @@ class UiSmokeTest {
         assertTrue(
             "全屏页生效时主界面研究图标不应存在",
             compose.onAllNodesWithContentDescription("研究").fetchSemanticsNodes().isEmpty()
+        )
+
+        compose.onNodeWithTag("cluster_close").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("cluster_screen").fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithText("搜字音").assertExists()
+        compose.onNodeWithContentDescription("研究").assertExists()
+    }
+
+    /**
+     * 聚類分析摘要是「一行加粗的模組度／輪廓係數」，旧的三行摘要（可見方言點／自動分群 K／
+     * 同分群輪廓係數）已删除；「在地圖展示」打开地图全屏页，关闭只退一层回到聚類分析页。
+     */
+    @Test
+    fun clusterMapScreenOpensAndCloses() {
+        compose.onNodeWithContentDescription("研究").performClick()
+        compose.onNodeWithTag("research_dialog").assertExists()
+        compose.onNodeWithText("聚類分析").performClick()
+        compose.waitUntil(30_000) {
+            compose.onAllNodesWithTag("cluster_screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        // 全屏页先显示「正在計算」，真实库聚类要十几秒；等摘要出现再断言。
+        compose.waitUntil(60_000) {
+            compose.onAllNodesWithText("模組度", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // 摘要只剩一行：「模組度 X · 輪廓係數 Y」；旧三行不应再出现在语义树里。
+        compose.onNodeWithText("模組度", substring = true).assertExists()
+        assertTrue(
+            "旧摘要「可見方言點」应已删除",
+            compose.onAllNodesWithText("可見方言點", substring = true).fetchSemanticsNodes().isEmpty()
+        )
+        assertTrue(
+            "旧摘要「自動分群 K」应已删除",
+            compose.onAllNodesWithText("自動分群 K", substring = true).fetchSemanticsNodes().isEmpty()
+        )
+
+        // 「在地圖展示」位于「顯示名稱」下方，先滚动到按钮再点。
+        compose.onNodeWithTag("cluster_map_open").performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("cluster_map_screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("map_labels_switch").assertExists()
+        compose.onNodeWithTag("map_voronoi_switch").assertExists()
+
+        // 关闭地图页只退一层：聚類分析页仍在。
+        compose.onNodeWithTag("cluster_map_close").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("cluster_map_screen").fetchSemanticsNodes().isEmpty()
+        }
+        assertTrue(
+            "关闭地图页后聚類分析页应仍在",
+            compose.onAllNodesWithTag("cluster_screen").fetchSemanticsNodes().isNotEmpty()
         )
 
         compose.onNodeWithTag("cluster_close").performClick()
