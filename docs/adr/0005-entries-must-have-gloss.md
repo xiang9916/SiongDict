@@ -1357,3 +1357,34 @@ id 列即 `cognates.id`（2624–2635，写库顺序）；方言点按开发文�
 本批不改动存量无注释成员的既有状态（空注释 585 不变）。
 
 分析依据：`publish/analysis-coldhit-20261120.md`（同点同韵基准字复核）、`publish/dbwrite-coldhit3-20261120.md`／`publish/dbwrite_task2_20261120.py`（写库记录、id 2787–2789、校验数据、md5 前后值）、`app/src/main/assets/databases/siongdict.db`（`langs` 原串核对）、`publish/cognates.db.bak-*`（写前备份）。
+
+## 附录二十一：`modified_at` 回填（127 条）（2026-11-20，用户裁决）
+
+用户 2026-11-20 指令：「modified_at 为空的情况：回填吧，就按当作现在你改的」。本批**只补时间戳**：不增删成员、不改分组、不清库存，旧批次 127 条 `modified_at` 由 NULL 回填为回填时刻。
+
+### 一、范围与取值
+
+- 命中范围：`modified_at IS NULL` 的 **127** 行，id 连续区间 **2364–2490**（全部 `source='manual'`；为 2026-11-09 三批新增，Shout 8 组 79 条、Loom 5 条、Hiccup／Burp 4 组 39 条，以及同批其它条目）。
+- 取值：`datetime('now','localtime')` 单语句取值，127 行全部为 **2026-11-20 11:33:22**（同一时间戳说明是一条语句一次写入，不是逐行循环）。
+- 语句：`BEGIN IMMEDIATE` → `UPDATE cognates SET modified_at = datetime('now','localtime') WHERE modified_at IS NULL`（rowcount = 127）→ 12 项事务内校验 → `COMMIT`。
+
+### 二、校验（对拍写前备份，逐行逐字段）
+
+| 校验项 | 结果 |
+| --- | --- |
+| 行集合不变 | 2,772 = 2,772，相同 |
+| 除 `modified_at` 外 13 列逐 id 比对 | 差异 **0** 行 |
+| 被改动的 `modified_at` 集合 | 恰好 **127** 个，= 原 NULL 集合（2364–2490） |
+| 组表 `cognate_groups` 全表逐组比对 | 差异 **0** 组（203 组原样） |
+| 回填后 `modified_at IS NULL`／`= ''` | **0** ／ **0** |
+| 其余 2,645 行 | 原值不变（边界：id 2363 `2026-11-04 11:20:41`、id 2491 `2026-11-09 16:46:59`、id 2789 `2026-11-20 10:49:04`） |
+
+### 三、库存与文件（提交后独立回查）
+
+- 库存不变：**2,772 条 / 203 组**、方言点 **382**、义项 **137**、空注释 **585**、`(lang, ipa)` 重复对 **44**、`max_id` **2789**、`Σ member_count` 2,772、`source<>'manual'` 0、空 `sort_key` 0、孤立组 0、`integrity_check=ok`。
+- 文件：`app/src/main/assets/databases/cognates.db`（356,352 B）；写前 MD5 `e1cef1e7eb88b8a966c828a9cda75069` → 写后 **`5b7b7cdfb0fe526c829c50c0d6782268`**；写前备份 `publish/cognates.db.bak-20261120-113307`（另有前两批 `publish/cognates.db.bak-20261120-104837`、`publish/cognates.db.bak-20261120-093517`）。
+- 附注：附录二十 §七 所记「写后 MD5 `e1cef1e7…`」为**本批回填前**的值，之后以 `5b7b7cdf…` 为准；该批写库内容未变。
+
+本批不改动成员、分组与无注释成员的既有状态（空注释 585 不变）。
+
+分析依据：`publish/dbwrite-modifiedat-20261120.md`（写库报告、md5 前后值、事务内校验）、`publish/dbwrite_modifiedat_20261120.py`（写前 md5 断言 → 备份 → 事务 → 12 项校验）、`publish/cognates.db.bak-20261120-113307`（写前备份）。
