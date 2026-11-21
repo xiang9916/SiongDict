@@ -118,6 +118,26 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun meaningSearchPassesRawKeywordAndGroupsByCharGroup() = runTest(dispatcher) {
+        // 子串與「~」本字展開都在資料層（LocalLexicon）做；ViewModel 只負責原樣傳遞與分組。
+        lexicon.onSearchByMeaning = { keyword ->
+            listOf(result("尋", "甲", "dʑin2", note = keyword), result("尋", "乙", "dʑin2", note = keyword))
+        }
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.updateQuery("尋東西")
+        vm.updateMode(SearchMode.MEANING)
+        vm.search()
+        advanceUntilIdle()
+
+        assertEquals(listOf("尋東西"), lexicon.meaningQueries)
+        val card = vm.uiState.value.results.single()
+        assertEquals("尋", card.chars)
+        assertEquals(2, card.entries.size)
+    }
+
+    @Test
     fun cognateSearchUsesLabelAsTitleAndGroupIdAsSubtitle() = runTest(dispatcher) {
         cognates.onSearch = {
             listOf(

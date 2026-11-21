@@ -1788,4 +1788,42 @@ class DataLayerTest {
         }
     }
 
+    /**
+     * 搜釋義子串回歸鎖（ADR-0011）：舊實作用 `註釋 MATCH`，FTS5 unicode61 把連續漢字當單一
+     * token，只能命中「註釋恰好等於該詞」的列（「东西」256 行，而子串實際有 916 行）；舊 LIMIT 200
+     * 也會把排在後面的命中擠掉。新實作改用 instr 子串 + 把 `~` 還原成字組首字 + 字形變體。
+     */
+    @Test
+    fun meaningSearchMatchesSubstringsAndExpandsTilde() = runBlocking {
+        val d = data()
+        d.maintenance.prepare()
+
+        val dongStart = System.nanoTime()
+        val dong = d.lexicon.searchByMeaning("东")
+        val dongMs = (System.nanoTime() - dongStart) / 1_000_000
+        val dongxi = d.lexicon.searchByMeaning("东西")
+        val xunStart = System.nanoTime()
+        val xun = d.lexicon.searchByMeaning("寻东西")
+        val elapsed = (System.nanoTime() - xunStart) / 1_000_000
+        Log.i("Lexicon", "meaningSearch rows=" + xun.size + " elapsedMs=" + elapsed + " dongRows=" + dong.size + " dongMs=" + dongMs)
+
+        // 真實行：尋|岳陽路口|dʑin2|~东西:找东西（另見 常寧官嶺、常德前河）。
+        fun List<org.siongdict.app.data.SearchResult>.hasYueyangEntry(): Boolean = any {
+            it.chars == "尋" && it.lang == "岳陽路口" && it.note.contains("东西")
+        }
+        assertTrue("搜「东」應命中 尋|岳陽路口|~东西:找东西", dong.hasYueyangEntry())
+        assertTrue("搜「东西」應命中 尋|岳陽路口|~东西:找东西", dongxi.hasYueyangEntry())
+        assertTrue("搜「寻东西」應命中 尋|岳陽路口|~东西:找东西（~ 已還原為本字）", xun.hasYueyangEntry())
+
+        // 舊 MATCH '东' 只有 42 行；子串檢索應明顯更多（instr 全庫 1,007 行，上限 2,000）。
+        assertTrue("搜「东」應做子串檢索，命中數應超過 200（實際 " + dong.size + "）", dong.size > 200)
+        assertTrue("「寻东西」應命中 尋 字組（字形變體展開）", xun.any { it.chars == "尋" })
+
+        // 同一條列不得因多個變體／多個 OR 分支重複出現。
+        val distinct = dong.map { it.chars + "|" + it.lang + "|" + it.ipa + "|" + it.note }.toSet()
+        assertEquals("搜釋義結果不應重複", dong.size, distinct.size)
+
+        assertTrue("「寻东西」查詢應在 5 秒內完成（實際 " + elapsed + " ms）", elapsed < 5000)
+    }
+
 }

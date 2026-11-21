@@ -46,6 +46,20 @@ internal class LocalLexicon(
     companion object {
         private const val TAG = "Lexicon"
         private const val LANG_COLUMNS = "字組, 語言, 讀音, 註釋, 排序"
+
+        /**
+         * 搜釋義的匹配條件：原文子串，或把 `~` 還原成 [字組] 首字後的子串。
+         * 兩個佔位符吃同一個查詢變體。
+         */
+        private const val MEANING_MATCH =
+            "(instr(註釋, ?) > 0 OR (instr(註釋, '~') > 0 AND " +
+                "instr(REPLACE(註釋, '~', substr(字組, 1, instr(字組 || ' ', ' ') - 1)), ?) > 0))"
+
+        /** 每個字形變體都要全表掃一遍；4 組是桌機／裝置實測可接受的上界。 */
+        private const val MAX_MEANING_EXPANSIONS = 4
+
+        /** 子串檢索可能命中上萬行（如「子」12,445 行），按音典排序截前 2,000 條。 */
+        private const val MEANING_LIMIT = 2000
     }
 
     private var toneSystems: Map<String, ToneSystem>? = null
@@ -59,19 +73,28 @@ internal class LocalLexicon(
         query("SELECT $LANG_COLUMNS FROM langs WHERE 字組 MATCH ? ORDER BY 排序", arrayOf(hz))
     }
 
+    /**
+     * 搜釋義：對 `註釋` 做**子串**匹配，並把注釋裡的 `~` 還原成該條字組的本字。
+     *
+     * FTS5 的 `unicode61` 會把連續漢字視為單一 token，`註釋 MATCH` 只能命中「整個 token
+     * 恰好等於查詢」的行（例如 `東西` 只命中注釋本身就是「東西」的條目），所以子串檢索
+     * 只能用 `instr` 全表掃描；還原 `~` 取 [字組] 的第一個字（多字組只有 92 行，屬近似）。
+     * 詳見 docs/adr/0011-meaning-substring-search.md。
+     */
     override suspend fun searchByMeaning(keyword: String): List<SearchResult> = gate.run {
-        val seen = mutableSetOf<String>()
-        val results = mutableListOf<SearchResult>()
-        for (v in variants.expand(keyword)) {
-            query(
-                "SELECT $LANG_COLUMNS FROM langs WHERE 註釋 MATCH ? ORDER BY 排序 LIMIT 200",
-                arrayOf(v)
-            ).forEach { result ->
-                val key = "${result.chars}|${result.lang}|${result.ipa}|${result.note}"
-                if (seen.add(key)) results.add(result)
-            }
-        }
-        results
+        val input = keyword.trim()
+        if (input.isEmpty()) return@run emptyList()
+        // 字形變體依「與原輸入不同的字數」升冪：原輸入優先，其次只差一個字的寫法。
+        val expansions = variants.expand(input)
+            .distinct()
+            .sortedBy { candidate -> candidate.zip(input).count { (a, b) -> a != b } }
+            .take(MAX_MEANING_EXPANSIONS)
+        val where = List(expansions.size) { MEANING_MATCH }.joinToString(" OR ")
+        val args = expansions.flatMap { listOf(it, it) }.toTypedArray()
+        query(
+            "SELECT $LANG_COLUMNS FROM langs WHERE $where ORDER BY 排序 LIMIT $MEANING_LIMIT",
+            args
+        )
     }
 
     override suspend fun variantsOf(ch: String): List<String> = gate.run {

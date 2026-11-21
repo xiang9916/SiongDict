@@ -23,6 +23,7 @@ class FakeLexicon : Lexicon {
     var onDialectProfiles: () -> List<DialectProfile> = { emptyList() }
 
     val charQueries = mutableListOf<String>()
+    val meaningQueries = mutableListOf<String>()
     var divisionLoads = 0
     var profileLoads = 0
 
@@ -31,7 +32,10 @@ class FakeLexicon : Lexicon {
         return onSearchByChar(hz)
     }
 
-    override suspend fun searchByMeaning(keyword: String): List<SearchResult> = onSearchByMeaning(keyword)
+    override suspend fun searchByMeaning(keyword: String): List<SearchResult> {
+        meaningQueries += keyword
+        return onSearchByMeaning(keyword)
+    }
 
     override suspend fun variantsOf(ch: String): List<String> = onVariantsOf(ch)
 

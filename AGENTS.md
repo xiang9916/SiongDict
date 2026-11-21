@@ -47,7 +47,7 @@ app/src/main/java/org/siongdict/app/
   data/AppInfo.kt            读取 versionName（界面标题与数据库版本记录共用）
   data/DatabaseFiles.kt      assets → 私有目录复制（延迟 + 原子 + 自愈）、只读连接、版本比对、重置
   data/DbGate.kt             数据层串行化（Mutex + IO 线程），查询与重置的唯一排序点
-  data/Lexicon.kt            字音库端口与本地实现（FTS 检索、info 元数据、变体展开）
+  data/Lexicon.kt            字音库端口与本地实现（字組 FTS 检索、註釋子串 + ~ 本字展开、info 元数据、变体展开）
   data/CognateBook.kt        同源词库端口与本地实现（可选库、组查询与显示排序）
   data/DatabaseMaintenance.kt 供给/重置端口与本地实现
   data/VariantIndex.kt       繁简/异体展开（assets/variants.json，进程内缓存）
@@ -288,20 +288,21 @@ cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 
 ### 回归测试
 
-27 项仪器化测试（数据层 18 + 界面 9），需要模拟器或真机：
+28 项仪器化测试（数据层 19 + 界面 9），需要模拟器或真机：
 
 ```bash
 # 无窗口模拟器（本机 AVD：siongtest，API 35 / aosp_atd arm64）
 emulator -avd siongtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect &
 adb wait-for-device
-./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 27/27
+./gradlew :app:connectedDebugAndroidTest   # 全绿应显示 28/28
 ```
 
 - 测试依赖全部走 `androidTestImplementation` / `testImplementation`，**不进对外发布的 APK**；`assembleDebug` 不跑测试。
-- 另有 89 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、候选分區搜索 7、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、Mercator 投影 8（含两轴同单位、不同纬度不塌陷、等比缩放的投影回归锁）、泰森多邊形 6、經緯度 3、调色盘与方言树、版本比较与更新解析）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
+- 另有 90 项 JVM 单元测试（声调格式化、变体展开、检索装配/竞态、方言筛选树、义项相似度、层次聚类、社群偵測、候选分區搜索 7、三维布局、分群锚点布局、布局补间、三维投影、聚类引擎、Mercator 投影 8（含两轴同单位、不同纬度不塌陷、等比缩放的投影回归锁）、泰森多邊形 6、經緯度 3、调色盘与方言树、版本比较与更新解析、搜释义原样传参）：`./gradlew :app:testDebugUnitTest`，不需要模拟器，几秒完成。
 - 断言以**不变量**为主（有序、数量相等、往返一致、重置前后一致），只有少数用例引用具体数据（長沙 的声调与分区、`搜同源("彎腰")` 有结果）。上游资料更新后若测试失败，先核对断言是否仍成立，不要直接改测试。
 - 本次（0.4-rc.11 之后）新增的两项针对并发：`rapidResearchesLastWins`（慢查询不得覆盖新结果）、`resetDuringSearchDoesNotCrash`（检索中重置不崩、重置后可继续查）。
 - 本次（0.5-alpha.2）新增 3 项仪器化测试（`dialectProfilesLoadFromInfo` 方言画像、`cognateMembershipsMatchDatabase` 同源词成员、`researchOpensClusterAnalysis` 研究入口）与 14 项 JVM 测试（相似度 3、层次聚类 3、布局 1、聚类引擎 2、调色盘 2、ViewModel 聚类 3）。
+- `meaningSearchMatchesSubstringsAndExpandsTilde` 锁「搜释义」的子串语义（ADR-0011）：真实库搜「东」「东西」「寻东西」都必须命中 `尋|岳陽路口|~东西:找东西`（`~` 还原为本字），「东」命中数 > 200（旧的 `註釋 MATCH '东'` 只有 42 行），结果无重复键、单次查询 < 5 秒，并用 `Log.i("Lexicon", …)` 打印 `rows`／`elapsedMs` 供 `adb logcat -d -s Lexicon` 核对（2026-11-21 装置实测：搜「寻东西」5 行 514 ms、搜「东」1,278 行 294 ms；单次采样，复跑有 ±10% 浮动）。
 - `mapProjectionKeepsGeographicProportion` 用真实 491 点 + 真实底图跑 `fitTransform(1074×1000, padding 12)`，锁地图投影单位：内容高宽比 = 两轴弧度跨度比（误差 < 1%）、`contentHeight > 500 px`（修正前约 12.75 px）、投影点不共线（y 标准差 > contentHeight 的 10%、不同 y 值 > 100），Voronoi 单元格全部落在 `contentBounds()` 内且数量等于站点数。
 - `cognateInventoryMatchesRelease` 刻意写死本版的同源词库库存（组数、条数、新增组、调类范围），资料更新时**必须同步更新断言**，不要当普通不变量测试。
 - `clusterAnalysisUsesCommunityDetection` 用真实库跑两遍聚类（门槛 1 与默认门槛）：断言参与点数、自动类数 ≥3、`optimalK`／`optimalSilhouette` 与自动分区一致、**轮廓系数 > 0.10 且未标稀疏**、模组度落在 −0.5..1、**每个簇都不小于 `minClusterSize(n)`**、候选池按 k 升序且轮廓系数在 −1..1、每个点都带底图范围内的经纬度（100.2–119.7／21.5–33.5）、默认门槛为 4 且默认门槛下是 k=2（这是「可接受候选中轮廓最高」的正常结果，不是退化）、`groupedLayout3D` 类内平均距离小于类间质心距离。真实 k／轮廓系数／Q／类别规模／完整候选表／默认门槛结果全部用 `Log.i("ClusterTest", …)` 打印，跑完用 `adb logcat -d -s ClusterTest` 核对（2026-11-20 实测：门槛 1 → k=6、轮廓 0.1587；默认门槛 4 → k=2、轮廓 0.1972）。
@@ -354,7 +355,8 @@ debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`�
 
 9. **lint 目前 0 errors / 24 warnings，全部属于「已知可接受」**：7 条 GradleDependency（3 条应用依赖 + 4 条测试依赖/BOM 的版本提示，版本有意固定）、10 条启动图标形状、5 条 round 图标与方图标内容重复、2 条自适应图标缺 monochrome。发版不阻塞；要清掉它们需单独评估图标品牌与依赖升级，不要顺手改。
 10. **本 App 唯一的联网用途是「檢查更新」。** 启动时与「關於」面板手动点按时会 GET `https://api.github.com/repos/xiang9916/SiongDict/releases/latest`（8 秒超时、失败静默、不自动下载安装，见 ADR-0009）；`INTERNET` 权限只为此存在。除此之外全部离线，不要为其他功能加联网。
-11. **`app/src/main/assets/maps/provinces.json` 是派生产物，不要提交上游原件。** 它由 `tools/build_map.py` 从 MCPDict 的 `china.json` 裁切简化而来（bbox 100.2–119.7／21.5–33.5、容差 0.005°）；上游 `china.json`（约 928 KB）与任何原始 geojson 一律只留本机（§1）。要改底图就改脚本重跑，不要手改 JSON。地图页全程离线：别加线上图砖、第三方地图库或任何联网请求（唯一联网用途见下一条）。
+11. **`app/src/main/assets/maps/provinces.json` 是派生产物，不要提交上游原件。** 它由 `tools/build_map.py` 从 MCPDict 的 `china.json` 裁切简化而来（bbox 100.2–119.7／21.5–33.5、容差 0.005°）；上游 `china.json`（约 928 KB）与任何原始 geojson 一律只留本机（§1）。要改底图就改脚本重跑，不要手改 JSON。地图页全程离线：别加线上图砖、第三方地图库或任何联网请求（唯一联网用途见第 10 条）。
+12. **「搜释义」不能退回 `註釋 MATCH`。** FTS5 `unicode61` 把连续汉字当成一个 token，`註釋 MATCH '东西'` 只命中 256 行，而子串实际有 916 行——所以要 `instr(註釋, ?)` 全表扫；注释里的 `~` 还要 `REPLACE` 成该条字组的本字（取 `字組` 第一个空白分段，多字组只有 92 行、属近似）。每个查询最多展开 4 组字形变体、结果上限 2,000 条，保持 `ORDER BY 排序`。详见 ADR-0011。
 
 ---
 
