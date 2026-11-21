@@ -8,13 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -33,7 +32,6 @@ import org.siongdict.app.analysis.PlanePoint
 import org.siongdict.app.analysis.ProvinceShape
 import org.siongdict.app.analysis.fitTransform
 import org.siongdict.app.analysis.voronoiCells
-import kotlin.math.sqrt
 
 /** 地圖四周留白（dp）。 */
 private const val MAP_PADDING_DP = 12f
@@ -60,6 +58,9 @@ private const val MAX_LABELS = 80
  * 手勢只改「縮放 + 平移」，底圖、多邊形、站點、標籤都畫在同一個變換下。
  * - 單指拖動平移、雙指捏合縮放（0.6–8 倍）、雙擊復原；
  * - 輕點站點選中（半徑 16dp），再點空白處取消。
+ *
+ * 視口數值與命中測試收在 [MapViewport]／[nearestSiteIndex]，標籤避讓收在 [placeLabels]，
+ * 手勢循環只負責把每一幀事件折進狀態。
  */
 @Composable
 internal fun GeoMapView(
@@ -78,14 +79,10 @@ internal fun GeoMapView(
     val selectedRadius = with(density) { SELECTED_RADIUS_DP.dp.toPx() }
     val tapRadius = with(density) { TAP_RADIUS_DP.dp.toPx() }
 
-    var zoom by remember(sites) { mutableFloatStateOf(1f) }
-    var panX by remember(sites) { mutableFloatStateOf(0f) }
-    var panY by remember(sites) { mutableFloatStateOf(0f) }
+    var viewport by remember(sites) { mutableStateOf(MapViewport()) }
     // 輕點命中要讀「手勢當下」的縮放/平移/選中值；放進 pointerInput 的 key 會讓手勢偵測
     // 在每一次縮放幀被重啟，因此用 rememberUpdatedState 傳值、key 只留站點。
-    val currentZoom = rememberUpdatedState(zoom)
-    val currentPanX = rememberUpdatedState(panX)
-    val currentPanY = rememberUpdatedState(panY)
+    val currentViewport = rememberUpdatedState(viewport)
     val currentSelected = rememberUpdatedState(selectedLang)
 
     val textMeasurer = rememberTextMeasurer()
@@ -128,46 +125,38 @@ internal fun GeoMapView(
                 .fillMaxSize()
                 .pointerInput(sites) {
                     detectTransformGestures { centroid, pan, gestureZoom, _ ->
-                        val oldZoom = zoom
-                        val newZoom = (oldZoom * gestureZoom).coerceIn(MAP_MIN_ZOOM, MAP_MAX_ZOOM)
-                        // 以手勢中心為錨點縮放：先換算成基準座標，再套新倍率與平移。
-                        val baseX = (centroid.x - panX) / oldZoom
-                        val baseY = (centroid.y - panY) / oldZoom
-                        panX = centroid.x - baseX * newZoom + pan.x
-                        panY = centroid.y - baseY * newZoom + pan.y
-                        zoom = newZoom
+                        viewport = viewport.transformed(
+                            centroidX = centroid.x,
+                            centroidY = centroid.y,
+                            panDeltaX = pan.x,
+                            panDeltaY = pan.y,
+                            gestureZoom = gestureZoom,
+                            minZoom = MAP_MIN_ZOOM,
+                            maxZoom = MAP_MAX_ZOOM,
+                        )
                     }
                 }
                 .pointerInput(sites, sitePositions) {
                     detectTapGestures(
                         onTap = { tap ->
-                            val scaleFactor = currentZoom.value
-                            val offsetX = currentPanX.value
-                            val offsetY = currentPanY.value
-                            var nearest: MapSite? = null
-                            var nearestDistance = tapRadius
-                            sites.forEachIndexed { index, site ->
-                                val base = sitePositions[index]
-                                val x = base.first * scaleFactor + offsetX
-                                val y = base.second * scaleFactor + offsetY
-                                val distance = sqrt((x - tap.x) * (x - tap.x) + (y - tap.y) * (y - tap.y))
-                                if (distance <= nearestDistance) {
-                                    nearestDistance = distance
-                                    nearest = site
-                                }
-                            }
+                            val hit = nearestSiteIndex(
+                                basePositions = sitePositions,
+                                viewport = currentViewport.value,
+                                tapX = tap.x,
+                                tapY = tap.y,
+                                radius = tapRadius,
+                            )
+                            val nearest = hit?.let { sites[it] }
                             onSelect(if (nearest?.lang == currentSelected.value) null else nearest?.lang)
                         },
                         onDoubleTap = {
-                            zoom = 1f
-                            panX = 0f
-                            panY = 0f
+                            viewport = MapViewport()
                         },
                     )
                 },
         ) {
-            translate(panX, panY) {
-                scale(zoom, zoom, pivot = Offset.Zero) {
+            translate(viewport.panX, viewport.panY) {
+                scale(viewport.zoom, viewport.zoom, pivot = Offset.Zero) {
                     // ① 底圖：省級輪廓填色 + 描邊。
                     for (shape in shapes) {
                         for (polygon in shape.polygons) {
@@ -240,29 +229,35 @@ internal fun GeoMapView(
                         )
                     }
 
-                    // ④ 標籤：按站點順序貪心避讓，上限 80 個。
+                    // ④ 標籤：按站點順序貪心避讓，選中站點強制顯示，上限 80 個。
                     if (showLabels) {
-                        var placed = 0
-                        val occupied = ArrayList<Rect>(MAX_LABELS)
-                        sites.forEachIndexed { index, site ->
-                            if (placed >= MAX_LABELS) return@forEachIndexed
-                            val selected = site.lang == selectedLang
-                            if (!selected && occupied.size >= MAX_LABELS) return@forEachIndexed
+                        val measured = sites.mapIndexed { index, site ->
                             val base = sitePositions[index]
                             val layout = textMeasurer.measure(site.lang, labelStyle)
-                            val width = layout.size.width.toFloat()
                             val height = layout.size.height.toFloat()
-                            val left = base.first + pointRadius + 2f
-                            val top = base.second - height / 2f
-                            val bounds = Rect(left, top, left + width, top + height)
-                            val overlaps = occupied.any { it.overlaps(bounds) }
-                            if (overlaps && !selected) return@forEachIndexed
-                            occupied.add(bounds)
-                            placed++
+                            val topLeft = Offset(base.first + pointRadius + 2f, base.second - height / 2f)
+                            Triple(
+                                layout,
+                                topLeft,
+                                LabelRequest(
+                                    left = topLeft.x,
+                                    top = topLeft.y,
+                                    width = layout.size.width.toFloat(),
+                                    height = height,
+                                    force = site.lang == selectedLang,
+                                ),
+                            )
+                        }
+                        val placed = placeLabels(
+                            requests = measured.map { it.third },
+                            maxLabels = MAX_LABELS,
+                        )
+                        for (placedIndex in placed) {
+                            val (layout, topLeft, _) = measured[placedIndex]
                             drawText(
                                 textLayoutResult = layout,
                                 color = onSurface,
-                                topLeft = Offset(left, top),
+                                topLeft = topLeft,
                             )
                         }
                     }

@@ -13,7 +13,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +73,9 @@ private const val LAYOUT_ANIMATION_MS = 700
  *
  * 手势：**单指拖动旋转**（左右改 yaw、上下改 pitch，pitch 夹在 ±80°）、
  * **双指捏合缩放 0.6–4 并拖动平移**、**轻点选中 16dp 内最近节点**、**双击复位视角**。
+ * 视口数值（旋转／缩放／平移／命中）与标签避让分别收在 [OrbitViewport] 与 [placeLabels]，
+ * 手势循环只负责把一帧事件折进状态。
+ *
  * 标签默认显示：点数 ≤ 40 全显；否则按深度从近到远贪心去重叠，上限 80 个；选中点始终显示。
  */
 @Composable
@@ -140,28 +142,28 @@ internal fun ClusterMap(
         }
     }
     val currentPointsState = rememberUpdatedState(animatedPoints)
-    var yaw by remember(points) { mutableFloatStateOf(DEFAULT_YAW_DEG) }
-    var pitch by remember(points) { mutableFloatStateOf(DEFAULT_PITCH_DEG) }
-    var zoom by remember(points) { mutableFloatStateOf(1f) }
-    var pan by remember(points) { mutableStateOf(Offset.Zero) }
+    var viewport by remember(points) {
+        mutableStateOf(defaultOrbitViewport(DEFAULT_YAW_DEG, DEFAULT_PITCH_DEG))
+    }
+    val currentViewport = rememberUpdatedState(viewport)
     var lastTapAt by remember(points) { mutableLongStateOf(0L) }
 
     val tapRadius = with(density) { 16.dp.toPx() }
     val mapPadding = with(density) { 8.dp.toPx() }
 
-    fun project(point: ClusterPoint, canvas: Size, currentYaw: Float, currentPitch: Float): ProjectedPoint =
+    fun project(point: ClusterPoint, canvas: Size, orbit: OrbitViewport): ProjectedPoint =
         projectPoint(
             x = point.x,
             y = point.y,
             z = point.z,
-            yawDeg = currentYaw,
-            pitchDeg = currentPitch,
+            yawDeg = orbit.yawDeg,
+            pitchDeg = orbit.pitchDeg,
             width = canvas.width,
             height = canvas.height,
             padding = mapPadding,
-            zoom = zoom,
-            panX = pan.x,
-            panY = pan.y,
+            zoom = orbit.zoom,
+            panX = orbit.panX,
+            panY = orbit.panY,
         )
 
     Box(
@@ -181,7 +183,7 @@ internal fun ClusterMap(
                         var pointerCount = 1
                         var previousPointerCount = 1
                         var pinchStartSpan = -1f
-                        var pinchStartZoom = zoom
+                        var pinchStartZoom = viewport.zoom
 
                         while (true) {
                             val event = awaitPointerEvent()
@@ -207,9 +209,12 @@ internal fun ClusterMap(
                             if (moved) {
                                 val delta = centroid - lastCentroid
                                 if (pointerCount == 1) {
-                                    yaw += delta.x * ROTATE_DEGREES_PER_PX
-                                    pitch = (pitch - delta.y * ROTATE_DEGREES_PER_PX)
-                                        .coerceIn(-MAX_PITCH_DEG, MAX_PITCH_DEG)
+                                    viewport = viewport.rotated(
+                                        deltaX = delta.x,
+                                        deltaY = delta.y,
+                                        degreesPerPx = ROTATE_DEGREES_PER_PX,
+                                        maxPitchDeg = MAX_PITCH_DEG,
+                                    )
                                 } else {
                                     val span = if (pressed.size >= 2) {
                                         (pressed[0].position - pressed[1].position).getDistance()
@@ -219,12 +224,16 @@ internal fun ClusterMap(
                                     if (span > 0f) {
                                         if (pinchStartSpan <= 0f) {
                                             pinchStartSpan = span
-                                            pinchStartZoom = zoom
+                                            pinchStartZoom = viewport.zoom
                                         }
-                                        zoom = (pinchStartZoom * (span / pinchStartSpan))
-                                            .coerceIn(MIN_ZOOM, MAX_ZOOM)
+                                        viewport = viewport.zoomedTo(
+                                            targetZoom = pinchStartZoom * (span / pinchStartSpan),
+                                            minZoom = MIN_ZOOM,
+                                            maxZoom = MAX_ZOOM,
+                                        )
                                     }
-                                    pan += delta
+                                    // 平移與舊版一致：手指數 > 1 的移動幀都生效，不受 span 是否為 0 影響。
+                                    viewport = viewport.panned(delta.x, delta.y)
                                 }
                                 event.changes.forEach { it.consume() }
                             }
@@ -236,32 +245,22 @@ internal fun ClusterMap(
                         if (!moved && duration <= TAP_WINDOW_MS) {
                             if (now - lastTapAt <= DOUBLE_TAP_WINDOW_MS) {
                                 // 双击：复位视角。
-                                yaw = DEFAULT_YAW_DEG
-                                pitch = DEFAULT_PITCH_DEG
-                                zoom = 1f
-                                pan = Offset.Zero
+                                viewport = defaultOrbitViewport(DEFAULT_YAW_DEG, DEFAULT_PITCH_DEG)
                                 lastTapAt = 0L
                             } else {
                                 lastTapAt = now
                                 val canvas = Size(size.width.toFloat(), size.height.toFloat())
-                                var bestIndex = -1
-                                var bestDistance = Float.MAX_VALUE
-                                for ((index, point) in currentPointsState.value.withIndex()) {
-                                    val projected = project(point, canvas, yaw, pitch)
-                                    val distance = (Offset(projected.x, projected.y) - down.position)
-                                        .getDistance()
-                                    if (distance < bestDistance) {
-                                        bestDistance = distance
-                                        bestIndex = index
-                                    }
+                                val orbit = currentViewport.value
+                                val projected = currentPointsState.value.map { point ->
+                                    project(point, canvas, orbit)
                                 }
-                                onSelect(
-                                    if (bestIndex >= 0 && bestDistance <= tapRadius) {
-                                        currentPointsState.value[bestIndex].lang
-                                    } else {
-                                        null
-                                    }
+                                val hit = nearestProjectedIndex(
+                                    projected = projected,
+                                    tapX = down.position.x,
+                                    tapY = down.position.y,
+                                    radius = tapRadius,
                                 )
+                                onSelect(hit?.let { currentPointsState.value[it].lang })
                             }
                         }
                     }
@@ -271,7 +270,7 @@ internal fun ClusterMap(
             val count = drawPoints.size
             if (count == 0) return@Canvas
             val canvas = size
-            val projected = drawPoints.map { project(it, canvas, yaw, pitch) }
+            val projected = drawPoints.map { project(it, canvas, viewport) }
             val baseRadius = sqrt(size.width * size.height / count)
                 .coerceIn(2.5.dp.toPx(), 6.dp.toPx())
             val radiusOf = { index: Int ->
@@ -361,29 +360,40 @@ internal fun ClusterMap(
                 }
             }
 
-            // 4) 标签。
+            // 4) 标签：点数多时按深度从近到远贪心去重叠，上限 80 个；点数少时全显示。
             if (showLabels) {
+                val crowded = count > ALL_LABELS_THRESHOLD
                 val ordered = drawPoints.indices.sortedByDescending { projected[it].depth }
-                val placed = mutableListOf<Rect>()
-                var drawn = 0
-                for (index in ordered) {
-                    if (count > ALL_LABELS_THRESHOLD && drawn >= MAX_LABELS) break
+                val measured = ordered.map { index ->
                     val anchor = Offset(
                         projected[index].x,
                         projected[index].y + radiusOf(index) + 2.dp.toPx(),
                     )
                     val layout = textMeasurer.measure(drawPoints[index].lang, labelStyle)
-                    val rect = Rect(
-                        offset = Offset(anchor.x - layout.size.width / 2f, anchor.y),
+                    val topLeft = Offset(anchor.x - layout.size.width / 2f, anchor.y)
+                    val padded = Rect(
+                        offset = topLeft,
                         size = Size(layout.size.width.toFloat(), layout.size.height.toFloat()),
                     ).inflate(1.dp.toPx())
-                    if (count > ALL_LABELS_THRESHOLD && placed.any { it.overlaps(rect) }) continue
-                    placed.add(rect)
-                    drawText(
-                        textLayoutResult = layout,
-                        topLeft = Offset(anchor.x - layout.size.width / 2f, anchor.y),
+                    Triple(
+                        layout,
+                        topLeft,
+                        LabelRequest(
+                            left = padded.left,
+                            top = padded.top,
+                            width = padded.width,
+                            height = padded.height,
+                        ),
                     )
-                    drawn++
+                }
+                val placed = placeLabels(
+                    requests = measured.map { it.third },
+                    maxLabels = if (crowded) MAX_LABELS else measured.size,
+                    avoidOverlap = crowded,
+                )
+                for (placedIndex in placed) {
+                    val (layout, topLeft, _) = measured[placedIndex]
+                    drawText(textLayoutResult = layout, topLeft = topLeft)
                 }
             } else {
                 // 隐藏名称时：类别质心标编号，选中点标名字（保持旧版行为）。
