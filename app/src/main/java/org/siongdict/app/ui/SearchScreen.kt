@@ -64,7 +64,6 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
-import org.siongdict.app.data.UpdateState
 import kotlinx.coroutines.launch
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.SearchMode
@@ -94,7 +93,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
     } else {
         // 有新版时「關於」图标原地旋转：0→180° 停在「!」的形状，再转到 360° 回到「i」，循环往复。
         // 只在发现新版本时才创建无限动画，避免无更新时常驻重组。
-        val hasUpdate = UpdateState.hasUpdate(uiState.appVersion)
+        val hasUpdate = LocalUpdateStatus.current.hasUpdate(uiState.appVersion)
         val infoRotation = if (hasUpdate) {
             val spin = rememberInfiniteTransition(label = "update-icon")
             val spinAngle by spin.animateFloat(

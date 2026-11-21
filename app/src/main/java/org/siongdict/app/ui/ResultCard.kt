@@ -45,13 +45,13 @@ import androidx.compose.ui.unit.sp
 import org.siongdict.app.data.CharGroup
 import org.siongdict.app.data.CognateGroup
 import org.siongdict.app.data.DialectEntry
-import org.siongdict.app.data.Simplifier
 import org.siongdict.app.ui.icons.SiongIcons
 
 /** 搜尋結果卡片：标题（字組或義項標籤）＋ 方言點數 ＋ 逐方言點读音。 */
 @Composable
 internal fun ResultCard(group: CharGroup) {
     val displayChars = cardTitle(group)
+    val displayPreferences = LocalDisplayPreferences.current
     var collapsed by rememberSaveable { mutableStateOf(false) }
     val titleSize = when {
         displayChars.length <= 2 -> 28.sp
@@ -119,7 +119,7 @@ internal fun ResultCard(group: CharGroup) {
                             color = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier.weight(1f)
                         )
-                        CopyButton { Simplifier.display(buildCharGroupExportText(group)) }
+                        CopyButton { displayPreferences.display(buildCharGroupExportText(group)) }
                     }
                 }
 
@@ -133,6 +133,7 @@ internal fun ResultCard(group: CharGroup) {
 
 @Composable
 private fun DialectBlock(dialect: DialectEntry) {
+    val displayPreferences = LocalDisplayPreferences.current
     var expanded by rememberSaveable { mutableStateOf(false) }
     val cognate = dialect.cognate
     Column(
@@ -190,7 +191,7 @@ private fun DialectBlock(dialect: DialectEntry) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         ) {
-                            append(" ${disp(p.note)}")
+                            append(" ${displayPreferences.display(p.note)}")
                         }
                     }
                 },
@@ -209,6 +210,7 @@ private fun DialectBlock(dialect: DialectEntry) {
 
 @Composable
 private fun CognateExpand(group: CognateGroup, currentLang: String) {
+    val displayPreferences = LocalDisplayPreferences.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -225,7 +227,7 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val headerText = if (group.semanticLabel.isNotBlank()) {
-                    "${disp("義類：${group.semanticLabel}")} ${group.groupId}"
+                    "${displayPreferences.display("義類：${group.semanticLabel}")} ${group.groupId}"
                 } else {
                     group.groupId
                 }
@@ -236,7 +238,7 @@ private fun CognateExpand(group: CognateGroup, currentLang: String) {
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
-                CopyButton { Simplifier.display(buildCognateExportText(group)) }
+                CopyButton { displayPreferences.display(buildCognateExportText(group)) }
             }
             LineGap()
             group.members.forEach { m ->
@@ -278,12 +280,13 @@ private fun LineGap() {
 @Composable
 private fun CopyButton(buildText: () -> String) {
     val context = LocalContext.current
+    val displayPreferences = LocalDisplayPreferences.current
     val clipboardManager = LocalClipboardManager.current
     DisableSelection {
         IconButton(
             onClick = {
                 clipboardManager.setText(AnnotatedString(buildText()))
-                Toast.makeText(context, disp("已複製同源詞"), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, displayPreferences.display("已複製同源詞"), Toast.LENGTH_SHORT).show()
             },
             modifier = Modifier.size(24.dp)
         ) {

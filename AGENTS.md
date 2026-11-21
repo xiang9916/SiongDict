@@ -42,8 +42,8 @@ git ls-files | grep -E '\.(keystore|jks)$|keystore\.properties'   # 应无输出
 
 ```
 app/src/main/java/org/siongdict/app/
-  MainActivity.kt            入口（主题 + 首帧前初始化简体渲染）
-  data/AppPrefs.kt           偏好档名与键名（版本记录、简体渲染开关共用）
+  MainActivity.kt            入口（主题 + 首帧前初始化显示偏好与更新状态，provide CompositionLocal）
+  data/AppPrefs.kt           偏好档名与键名（版本记录、简体渲染开关、护眼开关、更新缓存共用）
   data/AppInfo.kt            读取 versionName（界面标题与数据库版本记录共用）
   data/DatabaseFiles.kt      assets → 私有目录复制（延迟 + 原子 + 自愈）、只读连接、版本比对、重置
   data/DbGate.kt             数据层串行化（Mutex + IO 线程），查询与重置的唯一排序点
@@ -55,10 +55,10 @@ app/src/main/java/org/siongdict/app/
   data/ToneFormatter.kt      声调格式化（只接受 ToneSystem）
   data/LocalData.kt          本地数据层装配根（端口 + 共享设施）
   data/Models.kt             资料模型
-  data/Simplifier.kt         繁→简的显示层转换（读 assets/t2s.json）
+  data/PrefStore.kt          偏好存储接缝（接口 + SharedPreferences 适配器，测试用内存 fake）
+  data/DisplayPreferences.kt 显示偏好（繁→简渲染 + 护眼模式；Compose 状态，构造注入 PrefStore 与字表加载器）
   data/UpdateChecker.kt      更新检查（GET GitHub releases/latest，8s 超时，纯函数可 JVM 测）
-  data/UpdateState.kt        更新检查结果缓存（SharedPreferences + 进程内状态）
-  data/EyeCare.kt            护眼模式开关（浅米色主题背景 0xFFF2EEE6）
+  data/UpdateStatus.kt       更新检查状态（结果/检查中 + 缓存；构造注入 PrefStore 与查询函数）
   data/MapAssets.kt          離線底圖資產載入（assets/maps/provinces.json，壞檔回空表並 Log.w）
   analysis/ClusterModels.kt  聚类分析结果模型（点含经纬度、候选分区、稀疏阈值轮廓系数 0.10）
   analysis/Similarity.kt     义项相似度 → 距离矩阵（共同义项 +1／−1／不计）
@@ -74,9 +74,10 @@ app/src/main/java/org/siongdict/app/
   ui/DialectTree.kt         方言筛选树（音典分区 → 三级节点、纯函数）
   ui/ResultCard.kt           结果卡片（字组／义项标题、方言点读音、同源词展开、复制按钮）
   ui/InfoDialog.kt           「關於」面板（说明页、檢查更新行、護眼模式开关、简体渲染开关、重置資料庫）
-  ui/UiText.kt               显示层文本工具（简体渲染、字组标题）
+  ui/UiText.kt               显示层文本工具（简体渲染、字组标题；disp 读 LocalDisplayPreferences）
+  ui/LocalPreferences.kt     显示偏好与更新状态的 CompositionLocal 注入点（默认降级实例）
   ui/icons/SiongIcons.kt     内联图标（两个 Material 图标 + 自绘「研究」放大镜原子图；替代 material-icons-extended）
-  ui/theme/Theme.kt          品牌色与 Material 3 主题
+  ui/theme/Theme.kt          品牌色与 Material 3 主题（护眼底色读 LocalDisplayPreferences）
   ui/SearchViewModel.kt      检索、分组、方言筛选、聚类分析（构造注入数据端口，普通 ViewModel）
   ui/SearchViewModelFactory.kt 生产装配（LocalData → 三个端口注入 ViewModel）
   ui/CognateExport.kt        同源词 CSV 导出

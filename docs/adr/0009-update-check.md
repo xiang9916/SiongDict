@@ -1,7 +1,7 @@
 # 更新检查：启动时静默查 GitHub Release
 
 **状态**：已采纳（2026-11-20）
-**相关**：ADR-0005、ADR-0008、`AGENTS.md` §6／§7.10、`data/UpdateChecker.kt`、`data/UpdateState.kt`、`ui/InfoDialog.kt`
+**相关**：ADR-0005、ADR-0008、`AGENTS.md` §6／§7.10、`data/UpdateChecker.kt`、`data/UpdateStatus.kt`、`data/DisplayPreferences.kt`、`ui/InfoDialog.kt`
 
 ## 背景
 
@@ -13,7 +13,7 @@ App 是离线工具，但使用者装的是从 GitHub Release 下载的 APK；�
 
 ### 1. 触发时机
 
-- 启动：`MainActivity` 在首帧初始化（`Simplifier.init`／`EyeCare.init`／`UpdateState.init`）之后，用 `lifecycleScope.launch` 在后台触发 `UpdateState.refresh(...)`，不阻塞首帧、不等待结果。
+- 启动：`MainActivity` 在首帧初始化（`DisplayPreferences.init`／`UpdateStatus.init`）之后，用 `lifecycleScope.launch` 在后台触发 `UpdateStatus.refresh(...)`，不阻塞首帧、不等待结果。
 - 手动：「關於」面板顶部的更新行（`ui/InfoDialog.kt`，testTag `info_update_row`）点按触发同一路径；面板打开时显示上次缓存的状态。
 - 结果缓存在 `SharedPreferences`（键 `AppPrefs.KEY_UPDATE_LATEST = "update_latest"`），进程重启后仍能立即显示「有新版本」，不必每次打开面板都联网。
 
@@ -36,7 +36,7 @@ App 是离线工具，但使用者装的是从 GitHub Release 下载的 APK；�
 
 ### 4. 结果与展示
 
-- 状态由 `UpdateResult(latestTag, newer, error)` 与 `UpdateState` 承载：`checking`（檢查中…）、失败（`檢查失敗：…（點按重試）`）、有新版本（`有新版本 <tag>（點按查看）`）、已是最新（`已是最新版本`）。
+- 状态由 `UpdateResult(latestTag, newer, error)` 与 `UpdateStatus` 承载：`checking`（檢查中…）、失败（`檢查失敗：…（點按重試）`）、有新版本（`有新版本 <tag>（點按查看）`）、已是最新（`已是最新版本`）。
 - 有新版本时只有两处可见提示：① 顶栏「關於」图标原地旋转（0°→180° 停在「!」形状、再转到 360° 回到「i」，`infiniteRepeatable` ＋ `keyframes`，仅 `hasUpdate` 为真时启动）；② 「關於」面板的更新行显示版本号。**不弹窗、不打断检索**。
 - 点按更新行打开 `https://github.com/xiang9916/SiongDict/releases/tag/<tag>`（GitHub Release 页），**不自动下载、不自动安装**，由使用者自行决定。
 
@@ -68,7 +68,7 @@ App 是离线工具，但使用者装的是从 GitHub Release 下载的 APK；�
 
 ## 实施
 
-- 代码：`app/src/main/java/org/siongdict/app/data/UpdateChecker.kt`（端点常量、`check()`、`parseLatestTag()`、`compareVersions()`、`UpdateResult`）、`data/UpdateState.kt`（缓存键、`init()`、`hasUpdate()`、`refresh()`）、`data/EyeCare.kt`（护眼模式，与更新行同属「關於」面板白底改造，不联网）。
+- 代码：`app/src/main/java/org/siongdict/app/data/UpdateChecker.kt`（端点常量、`check()`、`parseLatestTag()`、`compareVersions()`、`UpdateResult`）、`data/UpdateStatus.kt`（缓存键、`init()`、`hasUpdate()`、`refresh()`）、`data/DisplayPreferences.kt`（简体渲染与护眼模式，与更新行同属「關於」面板白底改造，不联网）。
 - 界面：`ui/InfoDialog.kt` 顶部「更新」行（testTag `info_update_row`）＋ 护眼开关（testTag `eye_care_switch`）；`ui/SearchScreen.kt` 的「關於」图标旋转；`MainActivity` 启动触发。
 - 权限：`app/src/main/AndroidManifest.xml` 的 `INTERNET`。
 - 测试：JVM `data/VersionComparatorTest`（版本比较 2 项）与 `data/UpdateCheckerTest`（`parseLatestTag` 解析 2 项），只测纯函数、**绝不联网**；仪器化 `UiSmokeTest` 只断言更新行存在与可点，不对「已是最新／有新版本」这类依赖网络的结果断言（模拟器可能无网或限流）。

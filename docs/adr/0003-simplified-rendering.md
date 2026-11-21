@@ -2,7 +2,7 @@
 
 「关于」面板需要一个开关「渲染为简体中文 (Beta)」：打开后所见文本转简体，默认关闭，状态持久化。
 
-决定：转换只发生在**显示层**——界面与导出共用 `Simplifier.display()`；数据库、检索行为、`字组` 与使用者输入一律不动。转换表随包分发在 `app/src/main/assets/t2s.json`（OpenCC 的 `TSPhrases` 例外表 + `TSCharacters` 字表，另叠一层本地「著」保护词表），由 `tools/build_simplifier.py` 生成。开关存 `siongdict_prefs` 的 `render_simplified`，`重置数据库` 不会重置它。
+决定：转换只发生在**显示层**——界面与导出共用 `DisplayPreferences.display()`；数据库、检索行为、`字组` 与使用者输入一律不动。转换表随包分发在 `app/src/main/assets/t2s.json`（OpenCC 的 `TSPhrases` 例外表 + `TSCharacters` 字表，另叠一层本地「著」保护词表），由 `tools/build_simplifier.py` 生成。开关存 `siongdict_prefs` 的 `render_simplified`，`重置数据库` 不会重置它。
 
 为什么：① 数据库是上游 MCPDict 的重投影，任何就地转换都会被下一次 `build_db.py` 重建冲掉；② 检索依赖繁简异体混搜（见 ADR‑0002），把数据固化成单一写法反而削弱它；③ `字组` 是字形本体，`隻/只`、`乾/干` 一转就看不出原貌。
 

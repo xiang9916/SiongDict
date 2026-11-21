@@ -44,9 +44,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.launch
 import org.siongdict.app.data.AppInfo
-import org.siongdict.app.data.EyeCare
-import org.siongdict.app.data.Simplifier
-import org.siongdict.app.data.UpdateState
 
 /**
  * 「關於」面板：说明页（CHANGELOG 最新条目 + README）、檢查更新、护眼模式、
@@ -59,6 +56,7 @@ internal fun InfoDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val displayPreferences = LocalDisplayPreferences.current
     var showResetConfirm by remember { mutableStateOf(false) }
     val currentVersion = remember { AppInfo.versionName(context) }
 
@@ -149,7 +147,7 @@ internal fun InfoDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { Simplifier.setEnabled(context, !Simplifier.enabled) }
+                            .clickable { displayPreferences.setRenderSimplified(!displayPreferences.renderSimplifiedEnabled) }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -160,8 +158,8 @@ internal fun InfoDialog(
                             fontWeight = FontWeight.Medium
                         )
                         Switch(
-                            checked = Simplifier.enabled,
-                            onCheckedChange = { Simplifier.setEnabled(context, it) }
+                            checked = displayPreferences.renderSimplifiedEnabled,
+                            onCheckedChange = { displayPreferences.setRenderSimplified(it) }
                         )
                     }
 
@@ -170,7 +168,7 @@ internal fun InfoDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { EyeCare.setEnabled(context, !EyeCare.enabled) }
+                            .clickable { displayPreferences.setEyeCare(!displayPreferences.eyeCareEnabled) }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -181,8 +179,8 @@ internal fun InfoDialog(
                             fontWeight = FontWeight.Medium
                         )
                         Switch(
-                            checked = EyeCare.enabled,
-                            onCheckedChange = { EyeCare.setEnabled(context, it) },
+                            checked = displayPreferences.eyeCareEnabled,
+                            onCheckedChange = { displayPreferences.setEyeCare(it) },
                             modifier = Modifier.testTag("eye_care_switch")
                         )
                     }
@@ -201,16 +199,17 @@ internal fun InfoDialog(
 }
 
 /**
- * 「檢查更新」一行：状态文案由 [UpdateState] 派生，点按的行为随状态变化。
+ * 「檢查更新」一行：状态文案由 [UpdateStatus] 派生，点按的行为随状态变化。
  * 首次查询在 MainActivity 启动时发起；这里负责手动重试与打开 Release 页。
  */
 @Composable
 private fun UpdateRow(currentVersion: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val result = UpdateState.result
-    val checking = UpdateState.checking
-    val hasUpdate = UpdateState.hasUpdate(currentVersion)
+    val updateStatus = LocalUpdateStatus.current
+    val result = updateStatus.result
+    val checking = updateStatus.checking
+    val hasUpdate = updateStatus.hasUpdate(currentVersion)
     val failed = result?.error != null
 
     val status = when {
@@ -230,7 +229,7 @@ private fun UpdateRow(currentVersion: String) {
                 if (hasUpdate && tag != null) {
                     openReleasePage(context, tag)
                 } else {
-                    scope.launch { UpdateState.refresh(context, currentVersion) }
+                    scope.launch { updateStatus.refresh(currentVersion) }
                 }
             }
             .testTag("info_update_row")
