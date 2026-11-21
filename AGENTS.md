@@ -276,6 +276,7 @@ cd MCPDict-master && git fetch && git checkout <新的 commit> && cd ../SiongDic
 
 ```bash
 export JAVA_HOME=/path/to/jdk-17
+export HOME="$PWD/publish/fakehome"    # 本机固定签名钥匙，见下「签名陷阱」
 ./gradlew assembleDebug
 cp app/build/outputs/apk/debug/app-debug.apk "publish/<version>.apk"
 ```
@@ -332,6 +333,14 @@ gh release create <version> "publish/<version>.apk" \
 ### 签名陷阱
 
 debug keystore 是**每台机器各自生成**的（`~/.android/debug.keystore`）。换一台机器出包，签名指纹就变了，已安装旧版的装置升级时会 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，升级前先卸载旧版。跨机器发版时，release notes 里要明写这条提醒。
+
+**本机（维护者）的对外发版钥匙固定在 `publish/fakehome/.android/debug.keystore`**，不在家目录。`publish/` 已 gitignore，所以钥匙随工作区留在本机；**换对话、换 AI 会话都不影响签名**，只要仍按 §6「出包」先 `export HOME="$PWD/publish/fakehome"`。自查顺序：
+
+1. 出包前跑 `./gradlew :app:signingReport`，确认 `Store:` 指向 `publish/fakehome/.android/debug.keystore`（而不是家目录那把）；
+2. 若 Gradle daemon 已用错钥匙（`HOME` 导出前启动过），先 `./gradlew --stop` 再用正确 `HOME` 重跑；
+3. 出包后核证书指纹应为 SHA-256 `e5b27e90dd1f218fe47529bc7342ef21c1f9801155b0959e6f3dfb5db65bcc74`（与 0.5-alpha.3 起各版逐位相同），可用 `apksigner verify --print-certs` 核对。
+
+家目录那把（`~/.android/debug.keystore`）只用于本机开发装机；两类包签名不同，不能互相覆盖安装。钥匙文件本身**不进仓库**（§1）。
 
 ## 7. 已知陷阱
 
