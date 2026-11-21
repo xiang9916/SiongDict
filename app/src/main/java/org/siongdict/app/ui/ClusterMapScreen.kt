@@ -36,7 +36,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.siongdict.app.analysis.ClusterAnalysisResult
-import org.siongdict.app.analysis.MapSite
 import org.siongdict.app.data.MapAssets
 
 /**
@@ -58,33 +57,11 @@ internal fun ClusterMapScreen(
     var showVoronoi by remember(result) { mutableStateOf(true) }
     var selectedLang by remember(result) { mutableStateOf<String?>(null) }
 
-    val partition = state.partition ?: result.communities
-    val clusterOf = remember(partition, result.points) {
-        val map = HashMap<String, Int>()
-        partition.clusters.forEachIndexed { index, cluster ->
-            cluster.forEach { pointIndex ->
-                result.points.getOrNull(pointIndex)?.let { map[it.lang] = index }
-            }
-        }
-        map
+    val presentation = remember(state.partition, result, selectedLang) {
+        presentClusters(result, state.partition, selectedLang)
     }
-    val sites = remember(result.points, clusterOf) {
-        result.points.mapNotNull { point ->
-            val lon = point.lon ?: return@mapNotNull null
-            val lat = point.lat ?: return@mapNotNull null
-            MapSite(
-                lang = point.lang,
-                lon = lon,
-                lat = lat,
-                cluster = clusterOf[point.lang] ?: 0,
-                colorHex = point.colorHex,
-            )
-        }
-    }
-    val clusterColors = remember(partition) {
-        List(partition.k.coerceAtLeast(1)) { index -> Color(paletteColor(index)) }
-    }
-    val selected = sites.firstOrNull { it.lang == selectedLang }
+    val sites = presentation.sites
+    val clusterColors = remember(presentation) { presentation.clusterColors.map { Color(it) } }
 
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -190,10 +167,11 @@ internal fun ClusterMapScreen(
                     .padding(horizontal = 20.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(partition.clusters, key = { index, _ -> index }) { index, cluster ->
+                itemsIndexed(presentation.legend, key = { _, item -> item.clusterIndex }) { _, item ->
+                    val color = Color(item.color)
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = clusterColors.getOrElse(index) { Color.Gray }.copy(alpha = 0.16f)
+                        color = color.copy(alpha = 0.16f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -203,13 +181,10 @@ internal fun ClusterMapScreen(
                             Box(
                                 modifier = Modifier
                                     .size(10.dp)
-                                    .background(
-                                        clusterColors.getOrElse(index) { Color.Gray },
-                                        CircleShape
-                                    )
+                                    .background(color, CircleShape)
                             )
                             Text(
-                                disp("第 ${index + 1} 類 · ${cluster.size} 點"),
+                                disp(item.label),
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -218,16 +193,9 @@ internal fun ClusterMapScreen(
                 }
             }
 
-            val detail = selected?.let { site ->
-                val point = result.points.firstOrNull { it.lang == site.lang }
-                if (point == null) {
-                    disp(site.lang)
-                } else {
-                    disp("${site.lang}（${point.division}） · 義項 ${point.tagCount} 個 · 同源詞條目 ${point.entryCount} 條")
-                }
-            }
             Text(
-                text = detail ?: disp("輕點節點查看方言點"),
+                text = presentation.selection?.combinedLine?.let { disp(it) }
+                    ?: disp("輕點節點查看方言點"),
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)

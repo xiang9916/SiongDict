@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.siongdict.app.analysis.ClusterAnalysisResult
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -161,6 +160,9 @@ private fun ClusterAnalysisBody(
     val maxK = state.maxK
     val optimalK = result.optimalK
     var showLabels by remember(result) { mutableStateOf(true) }
+    val presentation = remember(result, state.partition, state.selectedLang) {
+        presentClusters(result, state.partition, state.selectedLang)
+    }
 
     Column(
         modifier = Modifier
@@ -171,15 +173,13 @@ private fun ClusterAnalysisBody(
     ) {
         // 摘要：只保留一行加粗的分群质量指标。
         Text(
-            text = disp(
-                "模組度 ${formatScore(result.modularity)} · 輪廓係數 ${formatScore(result.optimalSilhouette)}"
-            ),
+            text = disp(presentation.summary.line),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
-        if (result.sparse) {
+        presentation.summary.sparseHint?.let { hint ->
             Text(
-                text = disp("分群結構偏弱（輪廓係數 < 0.10），結果僅供參考。"),
+                text = disp(hint),
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.error
             )
@@ -265,8 +265,8 @@ private fun ClusterAnalysisBody(
         }
 
         // 选中点详情
-        val selected = result.points.firstOrNull { it.lang == state.selectedLang }
-        if (selected != null) {
+        val selection = presentation.selection
+        if (selection != null) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
@@ -277,17 +277,17 @@ private fun ClusterAnalysisBody(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = disp("${selected.lang}（${selected.division}）"),
+                        text = disp(selection.titleLine),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = disp("義項 ${selected.tagCount} 個 · 同源詞條目 ${selected.entryCount} 條"),
+                        text = disp(selection.metricLine),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = disp("再點一次節點取消選取"),
+                        text = disp(selection.optionLine),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -296,14 +296,12 @@ private fun ClusterAnalysisBody(
         }
 
         // 类别图例
-        val clusters = state.partition?.clusters.orEmpty()
         when {
-            clusters.isNotEmpty() -> LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(clusters, key = { index, _ -> index }) { index, cluster ->
+            presentation.legend.isNotEmpty() -> LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(presentation.legend, key = { it.clusterIndex }) { item ->
                     ClusterChip(
-                        index = index,
-                        size = cluster.size,
-                        highlighted = state.highlightedCluster == index
+                        item = item,
+                        highlighted = state.highlightedCluster == item.clusterIndex
                     )
                 }
             }
@@ -419,8 +417,8 @@ private fun MinTagsControl(
 
 /** 一个类别图例块：调色盘色点 + 「第 n 類 · m 點」；选中点的类别会描边。 */
 @Composable
-private fun ClusterChip(index: Int, size: Int, highlighted: Boolean) {
-    val color = Color(paletteColor(index))
+private fun ClusterChip(item: ClusterLegendItem, highlighted: Boolean) {
+    val color = Color(item.color)
     Surface(
         shape = RoundedCornerShape(50),
         color = color.copy(alpha = if (highlighted) 0.28f else 0.14f),
@@ -433,7 +431,7 @@ private fun ClusterChip(index: Int, size: Int, highlighted: Boolean) {
         ) {
             Surface(shape = RoundedCornerShape(50), color = color, modifier = Modifier.size(8.dp)) {}
             Text(
-                text = disp("第 ${index + 1} 類 · ${size} 點"),
+                text = disp(item.label),
                 fontSize = 12.sp,
                 fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal
             )
@@ -463,7 +461,3 @@ private fun MessagePane(title: String, message: String, isError: Boolean) {
         }
     }
 }
-
-/** 分数显示：固定两位小数。 */
-private fun formatScore(value: Float): String =
-    String.format(Locale.ROOT, "%.2f", value)
