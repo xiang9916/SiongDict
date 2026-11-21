@@ -303,10 +303,10 @@ class SearchViewModelTest {
         assertEquals("test", vm.uiState.value.appVersion)
     }
 
-    // ─── 聚类分析（研究入口） ───
+    // ─── 聚类分析：状态机已搬到 ClusterSession，这里只留一条委托冒烟 ───
 
     @Test
-    fun openClusterAnalysisLoadsSnapshotAndComputesResult() = runTest(dispatcher) {
+    fun clusterAnalysisDelegatesToSession() = runTest(dispatcher) {
         seedClusterData()
         val vm = viewModel()
         advanceUntilIdle()
@@ -316,129 +316,13 @@ class SearchViewModelTest {
 
         val state = vm.clusterState.value
         assertTrue(state.visible)
-        assertFalse(state.loading)
-        assertNull(state.error)
-        val result = state.result
-        assertEquals(6, result?.visibleDialects ?: -1)
-        // 戊 无同源词被排除；最小义项数默认取轮廓系数最大的门槛（此处为 2），
-        // 因此只有 1 个义项的 己 被排除。
-        assertEquals(4, result?.points?.size ?: -1)
-        assertEquals(1, result?.excludedNoCognates ?: -1)
-        assertEquals(1, result?.excludedSparse ?: -1)
-        assertEquals(2, state.maxMinTags)
-        assertEquals("首次进入的默认门槛由轮廓系数挑出", 2, state.minTags)
-        // 只有组内两对相似度为正，跨群相似度 0 不成边
-        assertEquals(2, state.edges.size)
-        assertEquals(1, lexicon.profileLoads)
-        assertEquals(1, cognates.membershipLoads)
-
-        // 方言筛选取「湘語－甲區」：只剩甲乙两点参与，且复用内存快照不重读库
-        vm.updateFilters(DialectFilters(selected = setOf("湘語－甲區")))
-        vm.closeClusterAnalysis()
-        vm.openClusterAnalysis()
-        advanceUntilIdle()
-
-        val filtered = vm.clusterState.value
-        assertEquals(2, filtered.result?.visibleDialects ?: -1)
-        assertEquals(2, filtered.result?.points?.size ?: -1)
-        assertEquals("筛选变化只切片内存快照，不重读库", 1, lexicon.profileLoads)
-        assertEquals(1, cognates.membershipLoads)
-        assertEquals(2, filtered.maxMinTags)
-
-        // 筛选命中不到任何分区叶子：0 个可见点，不崩
-        vm.updateFilters(DialectFilters(selected = setOf("不存在－分區")))
-        vm.closeClusterAnalysis()
-        vm.openClusterAnalysis()
-        advanceUntilIdle()
-
-        val empty = vm.clusterState.value
-        assertNull(empty.error)
-        assertEquals(0, empty.result?.visibleDialects ?: -1)
-        assertTrue(empty.result?.points?.isEmpty() ?: false)
-        assertFalse(empty.loading)
-    }
-
-    @Test
-    fun setClusterCountSwitchesPartitionWithoutRecompute() = runTest(dispatcher) {
-        seedClusterData()
-        val vm = viewModel()
-        advanceUntilIdle()
-        vm.openClusterAnalysis()
-        advanceUntilIdle()
-
-        val resultBefore = vm.clusterState.value.result
-        val profileLoadsBefore = lexicon.profileLoads
-        val membershipLoadsBefore = cognates.membershipLoads
-
-        vm.setClusterCount(3)
-        advanceUntilIdle()
-
-        val state = vm.clusterState.value
-        assertEquals(3, state.selectedK ?: -1)
-        assertEquals(3, state.partition?.k ?: -1)
-        assertEquals("切换 k 只换分区，不重算", resultBefore, state.result)
-        assertEquals(profileLoadsBefore, lexicon.profileLoads)
-        assertEquals(membershipLoadsBefore, cognates.membershipLoads)
-
-        // 回到自动：分区改用社群偵測结果（optimalK = 社群数）
-        vm.setClusterCount(null)
-        advanceUntilIdle()
-        assertEquals(null, vm.clusterState.value.selectedK)
-        assertEquals(
-            vm.clusterState.value.result?.optimalK,
-            vm.clusterState.value.partition?.k
-        )
-        assertEquals(
-            vm.clusterState.value.result?.communities,
-            vm.clusterState.value.partition
-        )
-    }
-
-    @Test
-    fun setMinTagsRecomputesFromSnapshotAndResetClearsClusterState() = runTest(dispatcher) {
-        seedClusterData()
-        val vm = viewModel()
-        advanceUntilIdle()
-        vm.openClusterAnalysis()
-        advanceUntilIdle()
-        // 默认门槛为 2（轮廓系数最大）：4 点参与，己 被排除。
-        assertEquals(2, vm.clusterState.value.minTags)
-        assertEquals(4, vm.clusterState.value.result?.points?.size ?: -1)
-
-        val profileLoadsBefore = lexicon.profileLoads
-        vm.setMinTags(2)
-        advanceUntilIdle()
-
-        val state = vm.clusterState.value
-        assertEquals(2, state.minTags)
-        // 己 的义项数（1）低于门槛，被排除
         assertEquals(4, state.result?.points?.size ?: -1)
-        assertEquals(1, state.result?.excludedSparse ?: -1)
-        assertEquals("复算复用快照，不再读库", profileLoadsBefore, lexicon.profileLoads)
+        assertEquals(2, state.minTags)
 
-        // 上限由完整快照固定：调高门槛后不缩水，滑桿范围恒包含当前值
-        assertEquals("调高门槛后上限不变", 2, state.maxMinTags)
-        assertTrue("上限必须不小于当前值", state.maxMinTags >= state.minTags)
-
-        // 还能再调回 1（上限不变，被排除的点重新参与）
-        vm.setMinTags(1)
-        advanceUntilIdle()
-        val lowered = vm.clusterState.value
-        assertEquals(1, lowered.minTags)
-        assertEquals(2, lowered.maxMinTags)
-        assertEquals(5, lowered.result?.points?.size ?: -1)
-        assertEquals(0, lowered.result?.excludedSparse ?: -1)
-
-        // 重置数据库：快照与聚类状态一起作废（对话关闭）
+        // 重置资料库会作废快照并关闭页面
         vm.resetDatabases()
         advanceUntilIdle()
         assertFalse(vm.clusterState.value.visible)
         assertNull(vm.clusterState.value.result)
-
-        // 重置后再打开必须重新读库
-        vm.openClusterAnalysis()
-        advanceUntilIdle()
-        assertTrue(vm.clusterState.value.visible)
-        assertEquals(profileLoadsBefore + 1, lexicon.profileLoads)
     }
 }

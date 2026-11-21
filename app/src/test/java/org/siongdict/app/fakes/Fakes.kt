@@ -58,7 +58,7 @@ class FakeCognateBook : CognateBook {
 
     var onSearch: suspend (String) -> List<CognateGroup> = { emptyList() }
     var onGroupFor: suspend (String, String) -> CognateGroup? = { _, _ -> null }
-    var onMemberships: () -> List<CognateMembership> = { emptyList() }
+    var onMemberships: suspend () -> List<CognateMembership> = { emptyList() }
 
     var membershipLoads = 0
 

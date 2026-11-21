@@ -45,7 +45,7 @@ fun detectCommunities(
     if (n == 0) return CommunityResult(emptyList(), 0, 0.0)
     if (n == 1) return CommunityResult(listOf(0), 1, 0.0)
 
-    // 正相似度邊（與 ClusterMap.buildClusterEdges 同一判據）。
+    // 正相似度邊（與 analysis/ClusterEdges.kt 的 buildClusterEdges 同一判據）。
     var adjacency = Array(n) { HashMap<Int, Double>() }
     for (i in 0 until n) {
         for (j in i + 1 until n) {

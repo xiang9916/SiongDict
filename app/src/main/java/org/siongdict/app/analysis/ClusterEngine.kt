@@ -20,6 +20,9 @@ import kotlin.math.ceil
  *    輪廓係數低於 [ClusterAnalysisResult.SPARSE_SILHOUETTE] 時標記 sparse。
  *
  * 纯函数：不持有状态、不做 IO；同一输入永远返回同一结果。
+ *
+ * 「一次分析」唯一入口是 [analyzeComputation]：它在内部复用同一份相似度矩阵，
+ * 同时产出分析结果、画布连线与「最小义项数」的上限／实际值，调用方不再重算。
  */
 object ClusterEngine {
 
@@ -29,11 +32,14 @@ object ClusterEngine {
      */
     internal const val MIN_DEFAULT_COVERAGE = 0.5
 
+    /** 「最小義項數」滑桿上限的硬顶：再多也只是让滑桿步数失控，超过后没有区分意义。 */
+    internal const val MAX_MIN_TAGS = 10
+
     /** 候選分區搜索使用的最大類數（與介面滑桿上限一致）。 */
     private const val DEFAULT_MAX_K = 10
 
     /**
-     * 跑一次完整分析。
+     * 跑一次完整分析（只要分析结果时用）。
      *
      * @param profiles 可见方言点画像（决定 points 的顺序与可见数）
      * @param memberships 全库同源词成员；不在 [profiles] 里的方言点会被忽略
@@ -45,8 +51,108 @@ object ClusterEngine {
         memberships: List<CognateMembership>,
         minTags: Int = 1,
         maxK: Int = DEFAULT_MAX_K,
+    ): ClusterAnalysisResult =
+        analyzePrepared(prepare(profiles, memberships, minTags), profiles.size, maxK)
+
+    /**
+     * 「一次分析」唯一入口：分析结果 + 画布连线 + 门槛上限与实际门槛一起产出。
+     *
+     * [useDefaultMinTags] 为 true 时不采用 [minTags]，改由 [defaultMinTags] 在
+     * 1..上限 内挑轮廓系数最大的门槛作为实际门槛。连线使用与布局、分区同一份
+     * 相似度矩阵，避免调用方再算一次 O(n²)。
+     */
+    internal fun analyzeComputation(
+        profiles: List<DialectProfile>,
+        memberships: List<CognateMembership>,
+        minTags: Int = 1,
+        useDefaultMinTags: Boolean = false,
+        maxK: Int = DEFAULT_MAX_K,
+    ): ClusterComputation {
+        val upper = maxMinTags(profiles, memberships)
+        val effective = if (useDefaultMinTags) {
+            defaultMinTags(profiles, memberships, upper)
+        } else {
+            minTags.coerceIn(1, upper)
+        }
+        val prepared = prepare(profiles, memberships, effective)
+        return ClusterComputation(
+            result = analyzePrepared(prepared, profiles.size, maxK),
+            edges = buildClusterEdges(prepared.similarity),
+            maxMinTags = upper,
+            minTags = effective,
+        )
+    }
+
+    /**
+     * 「最小義項數」的穩定上限：快照里所有有同源词成员的方言点中，distinct
+     * [CognateMembership.semanticTag] 数的最大值，再夹到 1..[MAX_MIN_TAGS]。
+     *
+     * 与当前 [minTags] 及本次聚类结果无关：调高门槛只会让参与聚类的点变少，
+     * 但这把尺子始终按完整快照量，所以上限不会缩水，滑桿范围恒包含当前值。
+     */
+    private fun maxMinTags(
+        profiles: List<DialectProfile>,
+        memberships: List<CognateMembership>,
+    ): Int {
+        if (profiles.isEmpty()) return 1
+        val aggregate = aggregate(profiles, memberships)
+        val max = aggregate.tagsByLang.values.maxOfOrNull { it.size } ?: 1
+        return max.coerceIn(1, MAX_MIN_TAGS)
+    }
+
+    /**
+     * 「最小義項數」的預設值：在 1..[maxMinTags] 內挑「自動分群」輪廓係數最大的門檻，
+     * 平手取較小者。只算相似度、候選分區與輪廓係數，不做佈局，比 [analyze] 便宜。
+     *
+     * 候選門檻另受**覆蓋率下限**約束：參與點數不得少於全部有同源詞點數的 [MIN_DEFAULT_COVERAGE]
+     * （至少 2 點）。輪廓係數對小樣本天然偏大——2026-11-20 真實庫若不設限，最大值落在門檻 24，
+     * 只剩 10 個點參與，圖上幾乎沒東西可看；加下限後落在門檻 4（209/383 點），才是有意義的預設。
+     *
+     * 參與點集合相同的相鄰門檻結果必然相同，直接跳過重算（同時保持「平手取小」的語意）。
+     *
+     * 為控制開啟頁面的等待時間，這裡只跑候選池的粗搜索（γ 網格 + UPGMA，不做每 k 的二分細化）；
+     * [analyze] 之後仍會二分細化，所以實際輪廓係數只會 ≥ 這裡的估計值，挑出的門檻偶爾可能
+     * 不是細化後的嚴格最大值。2026-11-20 真實庫實測兩者一致（門檻 4、輪廓 0.1972）；
+     * 若改成與 [analyze] 完全相同的搜索，模擬器上開啟延遲由約 6.5 秒增至約 20.5 秒。
+     */
+    fun defaultMinTags(
+        profiles: List<DialectProfile>,
+        memberships: List<CognateMembership>,
+        maxMinTags: Int,
+    ): Int {
+        val activeCount = aggregate(profiles, memberships).activeCount
+        val minPoints = maxOf(2, ceil(activeCount * MIN_DEFAULT_COVERAGE).toInt())
+        var best = 1
+        var bestSilhouette = Double.NEGATIVE_INFINITY
+        var previousLangs: List<String>? = null
+        for (candidate in 1..maxMinTags.coerceAtLeast(1)) {
+            val prepared = prepare(profiles, memberships, candidate)
+            if (prepared.langs == previousLangs) continue
+            previousLangs = prepared.langs
+            // 參與點數隨門檻單調不增：跌破覆蓋率下限即可停止。
+            if (prepared.langs.size < minPoints) break
+            val candidates = searchPartitions(
+                similarity = prepared.similarity,
+                distances = prepared.similarity.distances,
+                maxK = DEFAULT_MAX_K,
+                bisect = false,
+            )
+            val auto = autoPartition(candidates, prepared.langs.size) ?: continue
+            val silhouette = auto.partition.silhouette.toDouble()
+            if (silhouette > bestSilhouette) {
+                bestSilhouette = silhouette
+                best = candidate
+            }
+        }
+        return best
+    }
+
+    /** 已切好参与点、算好相似度的中间产物 → 分析结果。 */
+    private fun analyzePrepared(
+        prepared: Prepared,
+        visibleDialects: Int,
+        maxK: Int,
     ): ClusterAnalysisResult {
-        val prepared = prepare(profiles, memberships, minTags)
         val tagsByLang = prepared.tagsByLang
         val participating = prepared.participating
         val similarity = prepared.similarity
@@ -94,60 +200,13 @@ object ClusterEngine {
             optimalSilhouette = autoPartition.silhouette,
             totalTags = totalTags,
             sparse = autoPartition.silhouette < ClusterAnalysisResult.SPARSE_SILHOUETTE,
-            visibleDialects = profiles.size,
-            excludedNoCognates = profiles.size - prepared.activeCount,
+            visibleDialects = visibleDialects,
+            excludedNoCognates = visibleDialects - prepared.activeCount,
             excludedSparse = prepared.activeCount - participating.size,
         )
     }
 
-    /**
-     * 「最小義項數」的預設值：在 1..[maxMinTags] 內挑「自動分群」輪廓係數最大的門檻，
-     * 平手取較小者。只算相似度、候選分區與輪廓係數，不做佈局，比 [analyze] 便宜。
-     *
-     * 候選門檻另受**覆蓋率下限**約束：參與點數不得少於全部有同源詞點數的 [MIN_DEFAULT_COVERAGE]
-     * （至少 2 點）。輪廓係數對小樣本天然偏大——2026-11-20 真實庫若不設限，最大值落在門檻 24，
-     * 只剩 10 個點參與，圖上幾乎沒東西可看；加下限後落在門檻 4（209/383 點），才是有意義的預設。
-     *
-     * 參與點集合相同的相鄰門檻結果必然相同，直接跳過重算（同時保持「平手取小」的語意）。
-     *
-     * 為控制開啟頁面的等待時間，這裡只跑候選池的粗搜索（γ 網格 + UPGMA，不做每 k 的二分細化）；
-     * [analyze] 之後仍會二分細化，所以實際輪廓係數只會 ≥ 這裡的估計值，挑出的門檻偶爾可能
-     * 不是細化後的嚴格最大值。2026-11-20 真實庫實測兩者一致（門檻 4、輪廓 0.1972）；
-     * 若改成與 [analyze] 完全相同的搜索，模擬器上開啟延遲由約 6.5 秒增至約 20.5 秒。
-     */
-    fun defaultMinTags(
-        profiles: List<DialectProfile>,
-        memberships: List<CognateMembership>,
-        maxMinTags: Int,
-    ): Int {
-        val activeCount = prepare(profiles, memberships, 1).activeCount
-        val minPoints = maxOf(2, ceil(activeCount * MIN_DEFAULT_COVERAGE).toInt())
-        var best = 1
-        var bestSilhouette = Double.NEGATIVE_INFINITY
-        var previousLangs: List<String>? = null
-        for (candidate in 1..maxMinTags.coerceAtLeast(1)) {
-            val prepared = prepare(profiles, memberships, candidate)
-            if (prepared.langs == previousLangs) continue
-            previousLangs = prepared.langs
-            // 參與點數隨門檻單調不增：跌破覆蓋率下限即可停止。
-            if (prepared.langs.size < minPoints) break
-            val candidates = searchPartitions(
-                similarity = prepared.similarity,
-                distances = prepared.similarity.distances,
-                maxK = DEFAULT_MAX_K,
-                bisect = false,
-            )
-            val auto = autoPartition(candidates, prepared.langs.size) ?: continue
-            val silhouette = auto.partition.silhouette.toDouble()
-            if (silhouette > bestSilhouette) {
-                bestSilhouette = silhouette
-                best = candidate
-            }
-        }
-        return best
-    }
-
-    /** 一次分析的「點集 + 相似度」中間產物；供 [analyze] 與 [defaultMinTags] 共用。 */
+    /** 一次分析的「点集 + 相似度」中间产物；供 [analyzePrepared] 与 [defaultMinTags] 共用。 */
     private class Prepared(
         val participating: List<DialectProfile>,
         val tagsByLang: Map<String, MutableSet<String>>,
@@ -156,6 +215,29 @@ object ClusterEngine {
         val similarity: DialectSimilarity,
     ) {
         val langs: List<String> = participating.map { it.lang }
+    }
+
+    /** 按 lang 聚合成员（义项集合与条数），不依赖门槛；供 [prepare] 与门槛上限共用。 */
+    private class Aggregate(
+        val tagsByLang: Map<String, MutableSet<String>>,
+        val entriesByLang: Map<String, Int>,
+        val activeCount: Int,
+    )
+
+    private fun aggregate(
+        profiles: List<DialectProfile>,
+        memberships: List<CognateMembership>,
+    ): Aggregate {
+        val visibleLangs = profiles.mapTo(HashSet(profiles.size * 2)) { it.lang }
+        val tagsByLang = HashMap<String, MutableSet<String>>()
+        val entriesByLang = HashMap<String, Int>()
+        for (membership in memberships) {
+            if (membership.lang !in visibleLangs) continue
+            tagsByLang.getOrPut(membership.lang) { HashSet() }.add(membership.semanticTag)
+            entriesByLang[membership.lang] = (entriesByLang[membership.lang] ?: 0) + 1
+        }
+        val activeCount = profiles.count { tagsByLang.containsKey(it.lang) }
+        return Aggregate(tagsByLang, entriesByLang, activeCount)
     }
 
     /**
@@ -167,26 +249,17 @@ object ClusterEngine {
         memberships: List<CognateMembership>,
         minTags: Int,
     ): Prepared {
-        val visibleLangs = profiles.mapTo(HashSet(profiles.size * 2)) { it.lang }
-        val tagsByLang = HashMap<String, MutableSet<String>>()
-        val entriesByLang = HashMap<String, Int>()
-        for (membership in memberships) {
-            if (membership.lang !in visibleLangs) continue
-            tagsByLang.getOrPut(membership.lang) { HashSet() }.add(membership.semanticTag)
-            entriesByLang[membership.lang] = (entriesByLang[membership.lang] ?: 0) + 1
-        }
-
-        val activeCount = profiles.count { tagsByLang.containsKey(it.lang) }
+        val aggregate = aggregate(profiles, memberships)
         val participating = profiles.filter { profile ->
-            val tags = tagsByLang[profile.lang] ?: return@filter false
+            val tags = aggregate.tagsByLang[profile.lang] ?: return@filter false
             tags.size >= minTags
         }
 
         return Prepared(
             participating = participating,
-            tagsByLang = tagsByLang,
-            entriesByLang = entriesByLang,
-            activeCount = activeCount,
+            tagsByLang = aggregate.tagsByLang,
+            entriesByLang = aggregate.entriesByLang,
+            activeCount = aggregate.activeCount,
             similarity = computeSimilarity(memberships, participating.map { it.lang }),
         )
     }
