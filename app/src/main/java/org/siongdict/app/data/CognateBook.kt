@@ -12,7 +12,14 @@ interface CognateBook {
 
     suspend fun search(query: String): List<CognateGroup>
 
-    suspend fun groupFor(lang: String, ipa: String): CognateGroup?
+    /**
+     * 按 (方言点, 读音) 反查同源词组；[chars] 非空时优先按字组精确匹配。
+     *
+     * 同一 (lang, ipa) 可能对应多个字组（同音不同字、分属不同义项组）。只按 (lang, ipa)
+     * 取首行会把「冷」显示到「□」所在的组（汨羅長樂 loŋ3 即一例）。字组查不到时回退旧行为：
+     * 存量 245 条 cognates.chars 与本库 langs.字組 不一致（多为记「□」），收紧条件会丢显示。
+     */
+    suspend fun groupFor(lang: String, ipa: String, chars: String? = null): CognateGroup?
 
     /**
      * 全库同源词成员（lang 非空），供聚类分析按方言点聚合。
@@ -53,13 +60,30 @@ internal class LocalCognateBook(
         groupIds.mapNotNull { readGroup(db, it) }.sortedWith(COGNATE_DISPLAY_ORDER)
     }
 
-    override suspend fun groupFor(lang: String, ipa: String): CognateGroup? = gate.run {
+    override suspend fun groupFor(lang: String, ipa: String, chars: String?): CognateGroup? = gate.run {
         val db = files.cognates() ?: return@run null
-        val groupId = db.rawQuery(
-            "SELECT cognate_group FROM cognates WHERE lang = ? AND ipa = ? LIMIT 1",
-            arrayOf(lang, ipa)
-        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: return@run null
+        val groupId = findGroupId(db, lang, ipa, chars) ?: return@run null
         readGroup(db, groupId)
+    }
+
+    /** 先按字组精确匹配（同一读音可能对应多个字组），查不到再回退到只按 (lang, ipa) 取首行。 */
+    private fun findGroupId(
+        db: SQLiteDatabase,
+        lang: String,
+        ipa: String,
+        chars: String?,
+    ): String? {
+        if (!chars.isNullOrBlank()) {
+            db.rawQuery(
+                "SELECT cognate_group FROM cognates WHERE lang = ? AND ipa = ? AND chars = ? " +
+                    "ORDER BY id LIMIT 1",
+                arrayOf(lang, ipa, chars)
+            ).use { cursor -> if (cursor.moveToFirst()) return cursor.getString(0) }
+        }
+        return db.rawQuery(
+            "SELECT cognate_group FROM cognates WHERE lang = ? AND ipa = ? ORDER BY id LIMIT 1",
+            arrayOf(lang, ipa)
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
     }
 
     override suspend fun memberships(): List<CognateMembership> = gate.run {

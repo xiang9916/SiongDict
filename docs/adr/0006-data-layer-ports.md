@@ -39,8 +39,8 @@ assets → 私有目录的复制与自愈、`versionName` 版本门、两个 SQL
 
 ## 后果
 
-- 检索装配、分组、方言筛选第一次可以在 JVM 上测（`app/src/test`，24 项）；
-  设备测试继续覆盖真实 SQL、资产复制与重置（`DataLayerTest` 11 项 + `UiSmokeTest` 6 项）。
+- 检索装配、分组、方言筛选第一次可以在 JVM 上测（`app/src/test`；2026-11-23 计数：132 项 / 23 个测试类）；
+  设备测试继续覆盖真实 SQL、资产复制与重置（2026-11-23 计数：`DataLayerTest` 20 项 + `UiSmokeTest` 9 项，共 29 项）。
 - 连接生命周期不变：仍在进程内复用，`ViewModel` 清除时不关闭（本决定不处理该问题）。
 - 无 schema／数据／版本号变化；`versionName` 的刷新机制仍是唯一的数据更新开关。
 - `cognate_groups` 表仍未被 App 使用（组标签取成员首行）；这是数据契约问题，另案。
@@ -49,3 +49,7 @@ assets → 私有目录的复制与自愈、`versionName` 版本门、两个 SQL
 ## 实施
 
 2026-10-24，对应 0.4-rc.12 之后的未发版重构；文件见 `app/src/main/java/org/siongdict/app/data/`。
+
+## 增补（2026-11-23）：`CognateBook.groupFor` 增 `chars` 参数
+
+「搜同源」卡片原先只按 `(lang, ipa)` 定位组，遇到同一读音被多个组收录（全库存在 `(lang, ipa)` 重复键，如 汨羅長樂 `loŋ3` 同时在 `Cold_laŋ4` 与 `ShakeOffDust_lɔŋ4`、桑植芙蓉橋 `tæ3` 同时在 `Hit_tæ3` 与 `Devour_tai3`）会把卡片归到错误的组。2026-11-23 修**显示层**：端口签名为 `groupFor(lang, ipa, chars: String? = null)`，实现先按 `(lang, ipa, chars)` 精确查、查不到再回退 `(lang, ipa)`；`ui/SearchViewModel.kt` 调用时把结果的 `chars` 一并传入。数据库未改——`(lang, ipa)` 不是唯一键，`(lang, ipa, cognate_group)` 才是唯一键（沿用 ADR-0005 附录二十二 §六裁定）；`chars` 只用于卡片归属的消歧，不改变同源词查询、排序与聚类的口径。对应测试：仪器化 `DataLayerTest.cognateGroupForPrefersMatchingChars`——汨羅長樂 `loŋ3` 分别以「冷」与「□」取回 `Cold_laŋ4` 与 `ShakeOffDust_lɔŋ4`，字组不匹配时回退旧行为（该用例计入数据层 20 项）；JVM 侧仅 `app/src/test/java/org/siongdict/app/fakes/Fakes.kt` 的 `FakeCognateBook.onGroupFor` 改为三参签名，保证装配测试可编译。

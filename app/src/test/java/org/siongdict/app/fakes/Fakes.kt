@@ -57,14 +57,15 @@ class FakeLexicon : Lexicon {
 class FakeCognateBook : CognateBook {
 
     var onSearch: suspend (String) -> List<CognateGroup> = { emptyList() }
-    var onGroupFor: suspend (String, String) -> CognateGroup? = { _, _ -> null }
+    var onGroupFor: suspend (String, String, String?) -> CognateGroup? = { _, _, _ -> null }
     var onMemberships: suspend () -> List<CognateMembership> = { emptyList() }
 
     var membershipLoads = 0
 
     override suspend fun search(query: String): List<CognateGroup> = onSearch(query)
 
-    override suspend fun groupFor(lang: String, ipa: String): CognateGroup? = onGroupFor(lang, ipa)
+    override suspend fun groupFor(lang: String, ipa: String, chars: String?): CognateGroup? =
+        onGroupFor(lang, ipa, chars)
 
     override suspend fun memberships(): List<CognateMembership> {
         membershipLoads++

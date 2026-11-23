@@ -239,7 +239,7 @@ class SearchViewModel(
         groupBy { it.lang }
             .map { (lang, prons) ->
                 val cognate = if (!withCognate) null else prons.firstOrNull()?.let { p ->
-                    runCatching { cognateBook.groupFor(lang, p.ipa) }.getOrNull()
+                    runCatching { cognateBook.groupFor(lang, p.ipa, p.chars) }.getOrNull()
                 }?.let { formatCognate(it) }
                 DialectEntry(
                     lang = lang,

@@ -1,11 +1,11 @@
 # 聚类分析：按义项比较方言点
 
-**状态**：已采纳（2026-11-19）；2026-11-20 起相似度改为 λ=2 收缩平均、界面改为全屏页；2026-11-20 起「自動」分群改为候选分區搜索（UPGMA 各 k + Louvain 多解析度）后按轮廓系数挑，模组度降为对照，并新增地图展示（见下、ADR-0010）
+**状态**：已采纳（2026-11-19）；2026-11-20 起相似度改为 λ=2 收缩平均、界面改为全屏页；2026-11-20 起「自動」分群改为候选分區搜索（UPGMA 各 k + Louvain 多解析度）后按轮廓系数挑，模组度降为对照，并新增地图展示（见下、ADR-0010）；2026-11-23 同源词库扩至 2,938 条／210 组／400 个方言点，本文实测数字随库更新（2026-11-23 仪器化最终值）
 **相关**：ADR-0005（入组硬规则）、ADR-0006（数据层端口）、ADR-0007（方言范围与筛选树）、`AGENTS.md` §2／§5.1
 
 ## 背景
 
-同源词库现有 206 组、2,804 条人工条目（全部 `source='manual'`），覆盖 383 个方言点；字音库 `info` 表共 491 个方言点。这批条目的价值在跨方言对照：一个义项在哪些点有同源词、这些点彼此共享多少义项，直接反映词汇层面的亲疏。但既有的「搜同源」只能逐组看卡片，没有整体视图，判断「某片方言与哪片更近」只能人眼比对。
+同源词库现有 210 组、2,938 条人工条目（全部 `source='manual'`），覆盖 400 个方言点；字音库 `info` 表共 491 个方言点。这批条目的价值在跨方言对照：一个义项在哪些点有同源词、这些点彼此共享多少义项，直接反映词汇层面的亲疏。但既有的「搜同源」只能逐组看卡片，没有整体视图，判断「某片方言与哪片更近」只能人眼比对。
 
 需求是在 App 内新增「聚类分析」：把方言点按同源词相似度聚成若干类，并画成可交互的散点图。约束是离线、客户端计算、结果可解释、同一份资料每次结果一致（便于讨论与回归）。它因此挂在独立的「研究」入口下，而不是检索模式。
 
@@ -51,16 +51,16 @@
 ### 5. 全部在客户端计算，数据层只加两个只读查询
 
 - `Lexicon.dialectProfiles()`：读 `info` 表的 簡稱／音典分區／音典顏色／音典排序／經緯度，按 (音典排序, 簡稱) 排序，共 491 点（經緯度 491/491 有效，供地图页使用）；空白簡稱跳过，分区与颜色允许空串，与「方言筛选树」共用同一次 generation 缓存。
-- `CognateBook.memberships()`：读 `cognates` 的 lang／cognate_group／semantic_tag，共 2,804 条；同源词库缺失时返回空列表，与「搜同源」一致地降级。
-- ViewModel 首次打开时读一次、存成内存快照；调整分类数只切换分区，调整最小义项数只用快照重算，均不再读库；重置数据库时作废快照并关闭全屏页。慢结果用代际编号（`clusterSeq`）守卫，不覆盖新参数的结果。
-- 复杂度 O(n² + 成员条数)，n 为参与聚类的点数（有同源词的点 383）；单次计算在手机端是毫秒到百毫秒级。
+- `CognateBook.memberships()`：读 `cognates` 的 lang／cognate_group／semantic_tag，共 2,938 条；同源词库缺失时返回空列表，与「搜同源」一致地降级。
+- 会话状态机 `ui/ClusterSession.kt` 首次打开时读一次、存成内存快照；调整分类数只切换分区，调整最小义项数只用快照重算，均不再读库；重置数据库时作废快照并关闭全屏页。慢结果用代际编号（`generation`）守卫，不覆盖新参数的结果；`ui/SearchViewModel.kt` 只保留入口委托。
+- 复杂度 O(n² + 成员条数)，n 为参与聚类的点数（有同源词的点 400）；单次计算在手机端是毫秒到百毫秒级。
 
 ### 6. 聚类范围 = 当地方言筛选树可见点，再按证据量排除
 
 - 输入先按**当地方言筛选树**切片：`DialectFilters.selected == null` 时全收；否则只留 `leafKey(division)` 命中的点，与检索的方言筛选同一套前三段分区叶子键。
 - 切片后再排除：没有同源词成员的点（`excludedNoCognates`）、义项数低于「最小义项数」的点（`excludedSparse`）。
 - 全屏页摘要只保留一行「模組度 · 輪廓係數」（旧的三行摘要已删除）；排除明细改由日志（`Log.i("ClusterTest", …)`）与图例呈现，避免头部信息过量。
-- 「最小义项数」的**默认值由数据决定**：在 1..上限 内逐个门槛试算「自动分群」的轮廓系数，取最大者（平手取小）。该搜索只跑粗候选池（γ 网格 + UPGMA，不做每 k 的二分细化）以控制开启延迟；正式 `analyze` 仍二分细化，实际轮廓系数只会 ≥ 估计值（2026-11-20 实测两者挑出的门槛与数值一致）。轮廓系数对小样本天然偏大，所以候选门槛另加**覆盖率下限**——参与点数不得少于有同源词点数的 50%（至少 2 点），否则真实库会一路挑到只剩 10 个点的门槛（2026-11-20 实测：不设限时最大值落在门槛 24／10 点）。加下限后真实库默认门槛 4：209/383 点参与，491 点中 108 点无同源词、174 点因义项不足被排除（2026-11-20 仪器化实测：该门槛下自动 k = 2、规模 178/31、轮廓 0.1972）。
+- 「最小义项数」的**默认值由数据决定**：在 1..上限 内逐个门槛试算「自动分群」的轮廓系数，取最大者（平手取小）。该搜索只跑粗候选池（γ 网格 + UPGMA，不做每 k 的二分细化）以控制开启延迟；正式 `analyze` 仍二分细化，实际轮廓系数只会 ≥ 估计值（2026-11-20 实测两者挑出的门槛与数值一致）。轮廓系数对小样本天然偏大，所以候选门槛另加**覆盖率下限**——参与点数不得少于有同源词点数的 50%（至少 2 点），否则真实库会一路挑到只剩 10 个点的门槛（2026-11-20 实测：不设限时最大值落在门槛 24／10 点）。加下限后真实库默认门槛 4：214/400 点参与，491 点中 91 点无同源词、186 点因义项不足被排除（2026-11-23 仪器化实测：该门槛下自动 k = 2、规模 184/30、轮廓 0.21485886）。
 - 关闭全屏页期间改方言筛选不会触发计算；下次打开时按当时的筛选状态重新切片，仍复用已读入的快照，不重读库。
 - 理由：聚类的对照基准应与使用者当前关心的方言范围一致；但图不能「悄悄少点」，所以排除计数必须显性可见。
 
@@ -77,11 +77,11 @@
 
 ## 数字
 
-- 同源词：206 组 / 2,804 条（全部 manual），覆盖 383 个方言点、140 个义项。
+- 同源词：210 组 / 2,938 条（全部 manual），覆盖 400 个方言点、141 个义项（2026-11-23 第五轮 +134 条：Cold/Hit/Shout 120 条、下飯 14 条）。
 - 方言点：491 个（`info` 表）。
-- 默认参数（`minTags` 自动）：默认门槛 4 → 209 点参与、108 点无同源词被排除、174 点因义项不足被排除（2026-11-20 实测）；手动滑到 1 时 383 点全参与。
-- 义项数分布：1 个义项 81 点、2 个 67 点、3 个 27 点、4 个 30 点、5 个 25 点……最多 66 个（道縣梅花）。
-- 分类数：「自動」值 = 候选池里每簇 ≥ max(2, ⌈5%n⌉) 的候选中轮廓系数最高者。**2026-11-20 仪器化实测**：门槛 1（383 点）→ **k = 6**、类别规模 **61/108/75/62/31/46**、轮廓 **0.1587**、Q ≈ 0.2723（仅对照）；默认门槛 4（209 点）→ **k = 2**、规模 **178/31**、轮廓 **0.1972**、Q ≈ 0.0997（仅对照），义项不足排除 174 点。上一轮（λ=2、2,804 条／206 组、无候选池）实测为门槛 1 → 4 类（183/115/37/48、Q ≈ 0.2896）、默认门槛 4 → 3 类（Q ≈ 0.1885），已作废，仅作历史记录。`clusterAnalysisUsesCommunityDetection` 的 `Log.i("ClusterTest", …)` 日志可复核；手动可选 k = 2..min(10, n−1)；最小义项数滑桿范围 1..min(10, 快照中最大义项数)。
+- 默认参数（`minTags` 自动）：`defaultMinTags = 4`、可选上限 `maxMinTags = 66`（道縣梅花）；默认门槛 4 → 214 点参与、91 点无同源词被排除、186 点因义项不足被排除（2026-11-23 仪器化实测）；手动滑到 1 时 400 点全参与。
+- 义项数分布：1 个义项 80 点、2 个 66 点、3 个 40 点、4 个 26 点、5 个 28 点……最多 66 个（道縣梅花）。
+- 分类数：「自動」值 = 候选池里每簇 ≥ max(2, ⌈5%n⌉) 的候选中轮廓系数最高者。**2026-11-23 仪器化实测（最终值）**：门槛 1（400 点、`minClusterSize(400) = 20`）→ **k = 5**、类别规模 **147/112/25/71/45**、轮廓 **0.15074897**、Q ≈ 0.2714516（仅对照）；默认门槛 4（214 点）→ **k = 2**、规模 **184/30**、轮廓 **0.21485886**、Q ≈ 0.09385752（仅对照），义项不足排除 186 点。候选池各 k 的轮廓系数：k=2 0.1333341、k=3 0.13043906、k=4 0.128176、k=5 0.15074897、k=6 0.15042952、k=7 0.05531752、k=8 0.11645313、k=9 0.057077732、k=10 0.054373033——k=5 与 k=6 接近而 k=7 骤降，结合「每簇 ≥ 20 点」下限，5 类胜出。上一轮（λ=2、2,804 条／206 组、无候选池）实测为门槛 1 → 4 类（183/115/37/48、Q ≈ 0.2896）、默认门槛 4 → 3 类（Q ≈ 0.1885），已作废，仅作历史记录。`clusterAnalysisUsesCommunityDetection` 的 `Log.i("ClusterTest", …)` 日志可复核；手动可选 k = 2..min(10, n−1)；最小义项数滑桿范围 1..min(10, 快照中最大义项数)。
 - 相似度收缩：λ = 2（s = 总分/(|T|+λ)，s ∈ (−1,1)）。
 - 稀疏阈值：轮廓系数 < 0.10；模组度只作对照（不再用 0.15 判定）。
 - 候选池参数：Louvain γ 网格 0.25–4（10 档）、每 k 二分 γ 6 步、簇下限 max(2, ⌈5%n⌉)（5% 且至少 2 点）、每 k 只留轮廓最高者。
@@ -100,7 +100,7 @@
 
 ## 后果与限制
 
-- O(n²) 的距离矩阵与斥力计算：383 点约 14.7 万对、200 轮约 2.9×10⁷ 次运算，手机端可接受；若同源词覆盖大幅增加（上千点），需改用网格近似、抽样或预计算。
+- O(n²) 的距离矩阵与斥力计算：400 点约 8.0 万对、200 轮约 1.6×10⁷ 次运算，手机端可接受；若同源词覆盖大幅增加（上千点），需改用网格近似、抽样或预计算。
 - 手动分类数上限 10；n < 3 时不分区（`optimalK = 1`）；单点簇轮廓系数记 0，n 很小时对照分数可能偏低。候选池要跑 UPGMA 各 k 与 Louvain 多档 γ，计算量约为单次聚类的数倍（仍毫秒到百毫秒级）；Louvain 层数 ≤ 3。
 - 「共同义项下无共享组记 −1」是强惩罚：语义标签相同但音类组对不上会被明显拉远，这是有意为之（宁可分开，也不同源错并）。
 - 稀疏提示只是经验阈值（轮廓系数 0.10）；轮廓系数对非凸簇与锁死在 0.5 的距离并不敏感，所以它只用于在候选池里排序，不当作统计保证；模组度只作对照。
@@ -110,11 +110,12 @@
 
 ## 实施
 
-- 算法：`app/src/main/java/org/siongdict/app/analysis/` 十个纯 Kotlin 文件——`ClusterModels.kt`、`Similarity.kt`、`HierarchicalClustering.kt`（UPGMA）、`CommunityDetection.kt`（确定性 Louvain）、`PartitionSearch.kt`（候选池与自動挑选）、`ClusterLayout.kt`、`ClusterEngine.kt`、`MapModels.kt`、`MapProjection.kt`（Web Mercator）、`Voronoi.kt`（泰森多边形），不依赖 Android，可直接 JVM 测试。
-- 界面：`ui/ResearchDialog.kt`（「研究」一级入口，白底 Dialog + 右上「關閉」）、`ui/ClusterAnalysisScreen.kt`（全屏页，不套 Dialog；一行摘要、参数、图例、选中点详情、在地圖展示入口）、`ui/ClusterMap.kt`（透视投影画布、凸包、连线、旋转／缩放／平移手势、标签、点选）、`ui/ClusterProjection.kt`（3D 透视投影纯函数）、`ui/ClusterMapScreen.kt` 与 `ui/GeoMapView.kt`（地图页，见 ADR-0010）、`ui/ClusterColors.kt`（调色盘与颜色解析）、`ui/SearchViewModel.kt`（快照、筛选切片、代际守卫）、`ui/SearchScreen.kt`（入口装配）。
+- 算法：`app/src/main/java/org/siongdict/app/analysis/` 十二个纯 Kotlin 文件——`ClusterModels.kt`、`Similarity.kt`、`HierarchicalClustering.kt`（UPGMA）、`CommunityDetection.kt`（确定性 Louvain）、`PartitionSearch.kt`（候选池与自動挑选）、`ClusterComputation.kt`（一次分析的完整产物：结果 + 画布连线 + 义项数上下限，复用同一份相似度矩阵）、`ClusterEdges.kt`（每点前 N 条正相似边，无向去重）、`ClusterLayout.kt`、`ClusterEngine.kt`、`MapModels.kt`、`MapProjection.kt`（Web Mercator）、`Voronoi.kt`（泰森多边形），不依赖 Android，可直接 JVM 测试。
+- 界面：`ui/ResearchDialog.kt`（「研究」一级入口，白底 Dialog + 右上「關閉」）、`ui/ClusterAnalysisScreen.kt`（全屏页，不套 Dialog；一行摘要、参数、图例、选中点详情、在地圖展示入口）、`ui/ClusterSession.kt`（会话状态机：快照、方言筛选切片、代际守卫、默认门槛与上下限）、`ui/ClusterPresentation.kt`（呈现模型：摘要行、图例、类别颜色、站点与选中详情，纯 Kotlin）、`ui/ClusterMap.kt`（透视投影画布、凸包、连线、旋转／缩放／平移手势、标签、点选）、`ui/ClusterProjection.kt`（3D 透视投影纯函数）、`ui/LabelLayout.kt`（标签去重叠，三维画布与地图页共用）、`ui/ViewportMath.kt`（三维画布轨道视口：偏航／俯仰旋转、缩放、平移的数值与夹取）、`ui/ClusterMapScreen.kt` 与 `ui/GeoMapView.kt`（地图页，见 ADR-0010）、`ui/ClusterColors.kt`（调色盘与颜色解析）、`ui/SearchViewModel.kt`（把研究入口委托给 `ClusterSession`）、`ui/SearchScreen.kt`（入口装配）。
 - 数据：`data/Models.kt`（`DialectProfile` 含经纬度、`CognateMembership`）、`Lexicon.dialectProfiles()`、`CognateBook.memberships()`、`data/MapAssets.kt`（离线底图读取，坏档回空表）。
-- 测试：JVM 共 89 项（候选分区：`PartitionSearchTest` 7（候选池、可接受性、自動挑选与平手规则）；聚类：`SimilarityTest` 4、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterEngineTest` 4（筛选切片、默认门槛、布局、经纬度传递）、`ClusterLayoutTest` 6、`ClusterProjectionTest` 6、`ClusterColorsTest` 2、`SearchViewModelTest` 聚类 3；地图：`MapProjectionTest` 8（含两轴同单位、等比宽高比、不同纬度不塌陷的投影回归锁）、`VoronoiTest` 6、`GeoCoordinateTest` 3；另含 ADR-0009 的 `VersionComparatorTest` 2 与 `UpdateCheckerTest` 2）；仪器化共 27 项（数据层 18 + 界面 9），其中 `clusterAnalysisUsesCommunityDetection` 用真实库跑两遍聚类（门槛 1 与默认门槛），断言自动类数 ≥ 3、`optimalK`／`optimalSilhouette` 与自动分区一致、轮廓系数 > 0.10 且未标稀疏、候选池按 k 升序且轮廓在 −1..1、每簇不小于 `minClusterSize(n)`、每点经纬度落在底图 bbox、默认门槛为 4 且该门槛下是 k = 2（正常结果），并断言 `groupedLayout3D` 类内平均距离小于类间质心距离、用 `Log.i("ClusterTest", …)` 打印真实 k／轮廓／Q／类别规模与完整候选表。最终 JVM 89/89、仪器化 27/27（`mapProjectionKeepsGeographicProportion` 用真实 491 点与真实底图锁投影单位与内容框）。
-- 验证：`./gradlew :app:testDebugUnitTest`、`:app:connectedDebugAndroidTest`、`assembleDebug` 全绿；真实资料下 491 点、默认排除 108 点，摘要与图例数字自洽。
+- 测试：JVM 共 **132 项 / 23 个测试类**（候选分区 `PartitionSearchTest` 7；聚类 `SimilarityTest` 4、`HierarchicalClusteringTest` 3、`CommunityDetectionTest` 5、`ClusterEngineTest` 4、`ClusterLayoutTest` 6、`ClusterProjectionTest` 6、`LabelLayoutTest` 9、`ViewportTest` 11、`ClusterColorsTest` 2、`ClusterPresentationTest` 9、`ClusterSessionTest` 4、`SearchViewModelTest` 12；地图 `MapProjectionTest` 8、`VoronoiTest` 6、`GeoCoordinateTest` 3；其余 `ToneFormatterTest` 10、`VariantIndexTest` 5、`DialectTreeTest` 3、`VersionComparatorTest` 2、`UpdateCheckerTest` 2、`UpdateStatusTest` 5、`DisplayPreferencesTest` 6）；仪器化共 **29 项（数据层 20 + 界面 9）**，其中 `clusterAnalysisUsesCommunityDetection` 用真实库跑两遍聚类（门槛 1 与默认门槛），断言参与点数 400／214、自动类数 5／2、`optimalK`／`optimalSilhouette` 与自动分区一致、轮廓系数 > 0.10 且未标稀疏、候选池按 k 升序且轮廓在 −1..1、每簇不小于 `minClusterSize(n)`、每点经纬度落在底图 bbox、默认门槛为 4 且该门槛下是 k = 2（正常结果），并断言 `groupedLayout3D` 类内平均距离小于类间质心距离（2026-11-23 实测 0.2367 < 0.5131），用 `Log.i("ClusterTest", …)` 打印真实 k／轮廓／Q／类别规模与完整候选表。本轮 JVM 132/132 已在建置机全过；仪器化 29 项由 Lead／verifier 在真机复核（`mapProjectionKeepsGeographicProportion` 用真实 491 点与真实底图锁投影单位与内容框）。
+- 验证：2026-11-23 本机 `./gradlew :app:testDebugUnitTest` 132 项全过、`:app:assembleDebugAndroidTest` 编译通过，`:app:connectedDebugAndroidTest` 由 Lead／verifier 在真机复核；真实资料下 491 点、默认排除 91 个无同源词点与 186 个义项不足点（214/400 参与），摘要与图例数字自洽（2026-11-23 仪器化实测）。
 - 发布：0.5-alpha.3 / versionCode 51（2026-11-20）对外发布，本 ADR 的社群偵测、三维可视化与聚拢动画随该版上线。
 - 发布：0.5-alpha.4 / versionCode 52（2026-11-20）对外发布，本 ADR 的全屏页与默认最小义项数随该版上线。
 - 发布：0.5-alpha.5 / versionCode 53（2026-11-20）对外发布，本 ADR 的候选分區搜索、自动分类数／最小义项数与摘要精简随该版上线。
+- 发布：0.5-beta.6 / versionCode 54（2026-11-23）对外发布；随该版同源词库扩至 210 组 / 2,938 条（第五轮 +134 条），本文实测数字同步为最终库：门槛 1 时 400 点、k = 5、轮廓 0.15074897；默认门槛 4 时 214/400 点、k = 2、轮廓 0.21485886。
