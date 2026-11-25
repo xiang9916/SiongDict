@@ -3,7 +3,7 @@
 
 只保留湖南省域附近的省級輪廓，供「研究 → 聚類分析 → 在地圖展示」畫底圖用：
 - 來源：../MCPDict-master/app/src/main/assets/maps/china.json（MIT 授權）
-- 裁切：經度 100.2–119.7、緯度 21.5–33.5（Sutherland–Hodgman 裁到矩形）
+- 裁切：經度 108.0–117.2、緯度 22.8–31.9（Sutherland–Hodgman 裁到矩形；2026-11-25 由 100.2–119.7／21.5–33.5 收窄到維護者黃框範圍）
 - 簡化：Douglas–Peucker，容差 0.005°
 - 座標：保留 4 位小數
 - 輸出：{"source":…, "simplify":…, "provinces":[{"name":…,"polygons":[[[lon,lat],…],…]}]}
@@ -32,8 +32,8 @@ OUTPUT = os.path.join(
     "..", "app", "src", "main", "assets", "maps", "provinces.json",
 )
 
-MIN_LON, MAX_LON = 100.2, 119.7
-MIN_LAT, MAX_LAT = 21.5, 33.5
+MIN_LON, MAX_LON = 108.0, 117.2
+MIN_LAT, MAX_LAT = 22.8, 31.9
 TOLERANCE = 0.005
 DECIMALS = 4
 

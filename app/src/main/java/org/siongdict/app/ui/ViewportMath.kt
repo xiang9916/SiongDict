@@ -1,5 +1,6 @@
 package org.siongdict.app.ui
 
+import org.siongdict.app.analysis.PlaneRect
 import kotlin.math.sqrt
 
 /**
@@ -85,7 +86,44 @@ internal data class MapViewport(
     }
 }
 
-/** 地圖轻点命中：返回距离 ([tapX], [tapY]) 最近且在 [radius] 内的站点下标（先套视口变换）。 */
+/**
+ * 地圖站點的螢幕座標：基準（內容）座標先套 [MapViewport] 的縮放與平移。
+ *
+ * 站點圓圈、標籤與輕點命中都用這個結果，半徑／字號才不會被畫布的 scale 一起放大。
+ */
+internal fun screenPosition(
+    base: Pair<Float, Float>,
+    viewport: MapViewport,
+): Pair<Float, Float> = (base.first * viewport.zoom + viewport.panX) to
+    (base.second * viewport.zoom + viewport.panY)
+
+/**
+ * 地圖內容框內可見站點的下標（保持原順序）。
+ *
+ * 底圖裁切到經緯度 bbox 後，contentBounds() 就是「地圖框」：框外站點
+ * 不畫、不進泰森多邊形、不參與標籤避讓與輕點命中，避免落到框外空白。判定用未套
+ * 視口的基準座標，因此與縮放／平移無關；正好落在邊界上的點算框內。
+ */
+internal fun visibleSiteIndices(
+    basePositions: List<Pair<Float, Float>>,
+    bounds: PlaneRect,
+): List<Int> {
+    val result = ArrayList<Int>(basePositions.size)
+    basePositions.forEachIndexed { index, position ->
+        val x = position.first
+        val y = position.second
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            result.add(index)
+        }
+    }
+    return result
+}
+
+/**
+ * 地圖轻点命中：返回距离 ([tapX], [tapY]) 最近且在 [radius] 内的站点下标（先套视口变换）。
+ *
+ * [radius] 是螢幕像素（呼叫端傳 16dp），不隨縮放放大；候選站點由呼叫端先筛成框內點。
+ */
 internal fun nearestSiteIndex(
     basePositions: List<Pair<Float, Float>>,
     viewport: MapViewport,
@@ -96,8 +134,7 @@ internal fun nearestSiteIndex(
     var nearestIndex = -1
     var nearestDistance = radius
     basePositions.forEachIndexed { index, base ->
-        val x = base.first * viewport.zoom + viewport.panX
-        val y = base.second * viewport.zoom + viewport.panY
+        val (x, y) = screenPosition(base, viewport)
         val dx = x - tapX
         val dy = y - tapY
         val distance = sqrt(dx * dx + dy * dy)

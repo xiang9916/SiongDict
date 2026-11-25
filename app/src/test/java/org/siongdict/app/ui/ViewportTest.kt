@@ -1,5 +1,6 @@
 package org.siongdict.app.ui
 
+import org.siongdict.app.analysis.PlaneRect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -105,6 +106,69 @@ class ViewportTest {
         // 第二個站點在螢幕上的位置 = 50*2+20 = 120, 100。
         assertEquals(1, nearestSiteIndex(base, viewport, tapX = 121f, tapY = 101f, radius = 16f))
         assertEquals(0, nearestSiteIndex(base, viewport, tapX = 40f, tapY = 20f, radius = 16f))
+    }
+
+    @Test
+    fun screenPositionAppliesZoomAndPan() {
+        val viewport = MapViewport(zoom = 2f, panX = 5f, panY = -3f)
+        val screen = screenPosition(10f to 20f, viewport)
+        assertEquals(25f, screen.first, 1e-4f)
+        assertEquals(37f, screen.second, 1e-4f)
+    }
+
+    @Test
+    fun screenPositionIsIdentityAtDefaultViewport() {
+        val screen = screenPosition(12.5f to -7f, MapViewport())
+        assertEquals(12.5f, screen.first, 1e-4f)
+        assertEquals(-7f, screen.second, 1e-4f)
+    }
+
+    @Test
+    fun visibleSiteIndicesKeepsOnlyPointsInsideBounds() {
+        val bounds = PlaneRect(left = 0f, top = 0f, right = 100f, bottom = 50f)
+        val positions = listOf(
+            10f to 10f, // 0 框內
+            -1f to 10f, // 1 左外
+            10f to -1f, // 2 上外
+            101f to 10f, // 3 右外
+            10f to 51f, // 4 下外
+            0f to 0f, // 5 左上角（邊界算框內）
+            100f to 50f, // 6 右下角（邊界算框內）
+        )
+        assertEquals(listOf(0, 5, 6), visibleSiteIndices(positions, bounds))
+    }
+
+    @Test
+    fun visibleSiteIndicesFiltersEverythingOutsideBounds() {
+        val bounds = PlaneRect(left = 100f, top = 100f, right = 200f, bottom = 200f)
+        val positions = listOf(0f to 0f, 400f to 400f, 150f to 0f)
+        assertTrue(visibleSiteIndices(positions, bounds).isEmpty())
+        assertTrue(visibleSiteIndices(emptyList(), bounds).isEmpty())
+    }
+
+    @Test
+    fun nearestSiteIndexHitRadiusIsScreenPixelsNotScaled() {
+        // 放大 4 倍後站點在螢幕 (40, 40)：命中半徑仍是螢幕 16px，
+        // 若誤用「16/zoom」或把半徑畫進 scale 內，這裡的判定就會不同。
+        val viewport = MapViewport(zoom = 4f, panX = 0f, panY = 0f)
+        val base = listOf(10f to 10f)
+        assertEquals(0, nearestSiteIndex(base, viewport, tapX = 55f, tapY = 40f, radius = 16f))
+        assertNull(nearestSiteIndex(base, viewport, tapX = 57f, tapY = 40f, radius = 16f))
+        // 縮小到 0.5 倍後站點在螢幕 (5, 5)，命中半徑不變。
+        val zoomedOut = MapViewport(zoom = 0.5f, panX = 0f, panY = 0f)
+        assertEquals(0, nearestSiteIndex(base, zoomedOut, tapX = 5f, tapY = 20f, radius = 16f))
+        assertNull(nearestSiteIndex(base, zoomedOut, tapX = 5f, tapY = 22f, radius = 16f))
+    }
+
+    @Test
+    fun nearestSiteIndexOnFilteredCandidatesIgnoresHiddenSites() {
+        val bounds = PlaneRect(left = 0f, top = 0f, right = 100f, bottom = 100f)
+        val base = listOf(10f to 10f, 150f to 10f)
+        assertEquals(listOf(0), visibleSiteIndices(base, bounds))
+        // 框外站點（150, 10）離輕點更近，但先被剔除：命中只能落在框內站點上。
+        assertEquals(1, nearestSiteIndex(base, MapViewport(), tapX = 149f, tapY = 10f, radius = 16f))
+        val visibleOnly = visibleSiteIndices(base, bounds).map { base[it] }
+        assertNull(nearestSiteIndex(visibleOnly, MapViewport(), tapX = 149f, tapY = 10f, radius = 16f))
     }
 
     @Test

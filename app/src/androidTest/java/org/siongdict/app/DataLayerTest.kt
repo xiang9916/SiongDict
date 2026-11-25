@@ -24,6 +24,7 @@ import org.siongdict.app.analysis.ClusterAnalysisResult
 import org.siongdict.app.analysis.ClusterEngine
 import org.siongdict.app.analysis.fitTransform
 import org.siongdict.app.analysis.groupedLayout3D
+import org.siongdict.app.analysis.inverseMercatorY
 import org.siongdict.app.analysis.MapSite
 import org.siongdict.app.analysis.minClusterSize
 import org.siongdict.app.analysis.PlanePoint
@@ -216,7 +217,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：3,760 条 / 277 组、本版累计新增的 124 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：3,763 条 / 277 组（第九轮 3 条后）、本版累计新增的 124 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -268,7 +269,9 @@ class DataLayerTest {
             // 2026-11-25 第八轮 738 条 52 组（48 项裁决：51 个新组 733 条 + Wash_iuk8 5 条；另有既有 Flush_dzau6
             // 25 行改名为 Wash_dzau6、义项并入 Wash／洗滌），3,022/225 → 3,760/277；本批空注释例外 149 条
             // 登记于 ADR-0005 附录二十五。
-            assertEquals(3760, scalar("SELECT COUNT(*) FROM cognates"))
+            // 2026-11-25 第九轮 3 条（Wheal_biau4 +2、Scald_lat8 +1；旧组名 Wheal_biau3 改名 Wheal_biau4，无新组），
+            // 3,760/277 → 3,763/277；3 条注释均非空、无空注例外，登记于 ADR-0005 附录二十六。
+            assertEquals(3763, scalar("SELECT COUNT(*) FROM cognates"))
             assertEquals(277, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
@@ -337,7 +340,7 @@ class DataLayerTest {
                 "SonInLaw_tɔi1",
                 "Struggle_dʒia2",
                 "Tie_tʰiak7",
-                "Wheal_biau3",
+                "Wheal_biau4",
                 "Worry_kek7",
                 "Prick_lat7",
                 "Put_go6",
@@ -349,6 +352,43 @@ class DataLayerTest {
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
             }
+
+            // 2026-11-25 第九轮（ADR-0005 附录二十六）：3 条 id 3778–3780 全为 manual、注释非空；
+            // Wheal_biau4 收 3778 武岡 biau6（丘疹）与 3779 新祁陽白水 biaɔ6（被虫叮咬后的红团），
+            // Scald_lat8 收 3780 嘉禾普滿 lai5（~水:温水）；旧组名 Wheal_biau3 改名 Wheal_biau4，旧名不得残留。
+            assertEquals(3, scalar("SELECT COUNT(*) FROM cognates WHERE id BETWEEN 3778 AND 3780"))
+            assertEquals(
+                "第九轮 3 条应全为 manual 且注释非空（该轮无空注例外）",
+                3,
+                scalar(
+                    "SELECT COUNT(*) FROM cognates WHERE id BETWEEN 3778 AND 3780 " +
+                        "AND source = 'manual' AND note IS NOT NULL AND TRIM(note) <> ''"
+                )
+            )
+            for (row in listOf(
+                "3778|武岡|biau6|Wheal_biau4",
+                "3779|新祁陽白水|biaɔ6|Wheal_biau4",
+                "3780|嘉禾普滿|lai5|Scald_lat8"
+            )) {
+                assertEquals(
+                    "第九轮新增行 $row 应恰为一条",
+                    1,
+                    scalar(
+                        "SELECT COUNT(*) FROM cognates WHERE id || '|' || lang || '|' || ipa || '|' || cognate_group = ?",
+                        row
+                    )
+                )
+            }
+            assertEquals(
+                "旧组名 Wheal_biau3 不得残留在 cognates",
+                0,
+                scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Wheal_biau3'")
+            )
+            assertEquals(
+                "旧组名 Wheal_biau3 不得残留在 cognate_groups",
+                0,
+                scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Wheal_biau3'")
+            )
 
             // 2026-11-25 第八轮：既有 Flush_dzau6（25 行）改名 Wash_dzau6、义项 Wash／洗滌，成员与条数不变，旧名不得残留。
             assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Flush_dzau6'"))
@@ -364,9 +404,9 @@ class DataLayerTest {
                 )
             )
 
-            // 2026-11-23 两批新增 15 组 84 条（知乎批 5 组 + 9 主题批 10 组，见 ADR-0005 附录二十四）：
-            // 逐组写死条数、方言点数、空注释数、调类分布；空注释 12 条全部在 9 主题批
-            // （Hang_gɔŋ2 4、Whole_dzon2 4、Alley_laŋ6 2、Spring_dzon2 2）。
+            // 本表累计附录二十四（2026-11-23 两批 15 组 84 条，知乎批 5 组 + 9 主题批 10 组）以来各轮的新增/改组，
+            // 后续轮次（附录二十五第八轮、附录二十六第九轮）的组一并追加，逐组写死条数、方言点数、空注释数、调类分布；
+            // 附录二十四那批的空注释 12 条全部在 9 主题批（Hang_gɔŋ2 4、Whole_dzon2 4、Alley_laŋ6 2、Spring_dzon2 2）。
             val newGroups = mapOf(
                 "GetDamp_e3" to intArrayOf(12, 11, 0),
                 "GetDamp_yn5" to intArrayOf(3, 3, 0),
@@ -428,13 +468,13 @@ class DataLayerTest {
                 "SonInLaw_tɔi1" to intArrayOf(6, 6, 0),
                 "Struggle_dʒia2" to intArrayOf(5, 5, 0),
                 "Tie_tʰiak7" to intArrayOf(56, 56, 0),
-                "Wheal_biau3" to intArrayOf(2, 2, 0),
+                "Wheal_biau4" to intArrayOf(4, 4, 0),
                 "Worry_kek7" to intArrayOf(7, 7, 0),
                 "Prick_lat7" to intArrayOf(8, 8, 0),
                 "Put_go6" to intArrayOf(13, 12, 0),
                 "Ridge_kʰɔm3" to intArrayOf(16, 14, 1),
                 "Ridge_kʰɔm5" to intArrayOf(68, 66, 23),
-                "Scald_lat8" to intArrayOf(105, 103, 6),
+                "Scald_lat8" to intArrayOf(106, 104, 6),
                 "Left_tso5" to intArrayOf(61, 60, 46)
             )
             for ((g, want) in newGroups) {
@@ -514,13 +554,13 @@ class DataLayerTest {
                 "SonInLaw_tɔi1" to "1:4,3:2",
                 "Struggle_dʒia2" to "2:5",
                 "Tie_tʰiak7" to "1:9,2:4,5:2,6:2,7:39",
-                "Wheal_biau3" to "3:1,6:1",
+                "Wheal_biau4" to "3:1,6:3",
                 "Worry_kek7" to "1:5,7:2",
                 "Prick_lat7" to "6:1,7:7",
                 "Put_go6" to "1:3,2:1,5:1,6:3,7:5",
                 "Ridge_kʰɔm3" to "3:16",
                 "Ridge_kʰɔm5" to "5:68",
-                "Scald_lat8" to "3:1,5:90,6:7,7:7",
+                "Scald_lat8" to "3:1,5:91,6:7,7:7",
                 "Left_tso5" to "5:61"
             )
             for ((g, want) in newGroupTones) {
@@ -1796,6 +1836,7 @@ class DataLayerTest {
      * 2026-11-23 第五轮 120 条 + 下飯 14 条（ADR-0005 附录二十三）后库存 2,938 条 / 210 组；
      * 同日知乎批 37 条、9 主题批 47 条（ADR-0005 附录二十四）后库存 3,022 条 / 225 组；
      * 2026-11-25 第八轮 738 条 52 组（ADR-0005 附录二十五）后库存 3,760 条 / 277 组；
+     * 同日第九轮 3 条（附录二十六）后库存 3,763 条 / 277 组；
      * 空注释 859（附录十九至二十五累计例外）；(lang, ipa) 重复对 62、共 136 行
      * （口径：同一 lang+ipa 出现多行的值数，其中跨组同键 42）。
      */
@@ -1833,7 +1874,7 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            assertEquals("cognates 全表 3,760 条", 3760, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals("cognates 全表 3,763 条", 3763, scalar("SELECT COUNT(*) FROM cognates"))
             assertEquals("音类组 277 个", 277, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
             assertEquals(
                 "空注释 859 条（附录十九至二十五累计例外）",
@@ -1849,8 +1890,8 @@ class DataLayerTest {
                 )
             )
             assertEquals(
-                "最大 id 3777（第八轮新增段 3040–3777，共 738 条）",
-                3777,
+                "最大 id 3780（第八轮新增段 3040–3777 共 738 条 + 第九轮 3778–3780 共 3 条）",
+                3780,
                 scalar("SELECT MAX(id) FROM cognates")
             )
 
@@ -1989,12 +2030,12 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词成员关系端口（聚类相似度的最小输入）：全表 3,760 条、414 个方言点、277 组、195 个义项；
+     * 同源词成员关系端口（聚类相似度的最小输入）：全表 3,763 条、414 个方言点、277 组、195 个义项；
      * 每条 groupId 必须以 semanticTag + "_" 开头；抽查 Pile_tsut7（25 条）与 Curse_ʃwien3（8 条）；
      * 端口结果须与 cognates.db 直读的 (lang, groupId, semanticTag) 三元组完全一致。
      *
-     * 3,760 / 414 / 277 / 195 与两组条数是查 real 库（2026-11-25，ADR-0005 附录十九至二十五累计、
-     * 第八轮 738 条 52 组之后）确认的版本事实。
+     * 3,763 / 414 / 277 / 195 与两组条数是查 real 库（2026-11-25，ADR-0005 附录十九至二十六累计、
+     * 第八轮 738 条 52 组 + 第九轮 3 条之后）确认的版本事实。
      */
     @Test
     fun cognateMembershipsMatchDatabase() = runBlocking {
@@ -2002,7 +2043,7 @@ class DataLayerTest {
         d.maintenance.prepare()
         val memberships = d.cognateBook.memberships()
 
-        assertEquals("cognates 全表 3,760 条成员", 3760, memberships.size)
+        assertEquals("cognates 全表 3,763 条成员", 3763, memberships.size)
         assertEquals("成员应覆盖 414 个方言点", 414, memberships.map { it.lang }.distinct().size)
         assertEquals("成员应覆盖 277 个音类组", 277, memberships.map { it.groupId }.distinct().size)
         assertEquals("成员应覆盖 195 个义项", 195, memberships.map { it.semanticTag }.distinct().size)
@@ -2058,10 +2099,10 @@ class DataLayerTest {
      * Log 行供驗證員跑完儀器化後用 adb logcat -d -s ClusterTest 讀取真實數字：
      * k／輪廓係數／Q／類別規模／完整候選表／默認門槛與其分析結果。
      *
-     * 注意：下方的 414／3／21／75／5／219／3／93/97/29／77／195 與 2026-11-25 儀器化實測一致
-     * （門槛 1 → 414 點、k=3、規模 190/185/39、輪廓 0.15090147、Q 0.21497218；默認門槛 5 → 219 點、k=3、
-     * 93/97/29、輪廓 0.25222296、Q 0.2039756、無同源詞排除 77、義項不足排除 195）。同源詞庫由 3,022 條／402 點
-     * 增至 3,760 條／414 點（附錄二十五第八輪 738 條 52 組），參與點數隨庫增長；
+     * 注意：下方的 414／3／21／75／5／219／3／93/97/29／77／195 與 2026-11-25 第九輪 +3 條後儀器化復測一致
+     * （門槛 1 → 414 點、k=3、規模 190/185/39、輪廓 0.15117766、Q 0.21505591；默認門槛 5 → 219 點、k=3、
+     * 93/97/29、輪廓 0.25389686、Q 0.20493719、無同源詞排除 77、義項不足排除 195）。同源詞庫由 3,022 條／402 點
+     * 增至 3,763 條／414 點（附錄二十五第八輪 738 條 52 組 + 附錄二十六第九輪 3 條），參與點數隨庫增長；
      * 若資料變動導致不符，先記錄實測值、回填文檔，不要為過而放寬斷言。
      */
     @Test
@@ -2120,8 +2161,8 @@ class DataLayerTest {
             defaultSizes
         )
         assertEquals(
-            "默認門槛下輪廓係數（2026-11-25 實測 0.25222296）",
-            0.25222296f,
+            "默認門槛下輪廓係數（2026-11-25 第九輪復測 0.25389686）",
+            0.25389686f,
             atDefault.optimalSilhouette,
             5e-4f
         )
@@ -2197,8 +2238,8 @@ class DataLayerTest {
             result.communities.clusters.map { it.size }
         )
         assertEquals(
-            "自動分區輪廓係數（2026-11-25 實測 0.15090147）",
-            0.15090147f,
+            "自動分區輪廓係數（2026-11-25 第九輪復測 0.15117766）",
+            0.15117766f,
             result.optimalSilhouette,
             5e-4f
         )
@@ -2245,8 +2286,8 @@ class DataLayerTest {
             "分群锚点布局應把同類收緊：類內平均距 $meanIntra 應小於類間質心平均距 $meanBetween",
             meanIntra < meanBetween
         )
-        assertEquals("分群锚点布局類內平均距（2026-11-25 實測）", 0.3010647, meanIntra, 5e-4)
-        assertEquals("分群锚点布局類間質心平均距（2026-11-25 實測）", 0.6635449, meanBetween, 5e-4)
+        assertEquals("分群锚点布局類內平均距（2026-11-25 第九輪 +3 條後復測）", 0.30366503, meanIntra, 5e-4)
+        assertEquals("分群锚点布局類間質心平均距（2026-11-25 第九輪 +3 條後復測）", 0.66973255, meanBetween, 5e-4)
     }
 
     /**
@@ -2254,9 +2295,11 @@ class DataLayerTest {
      * 共用同一個 scale。修正前 X 用「度」、Y 用「弧度」，兩軸相差 180/π ≈ 57.3 倍，真實 App 的圖被壓成
      * 約 1050×12.75 px 的橫帶、點幾乎全落在同一行、泰森多邊形退化成貫穿畫布的豎條。
      *
-     * 這裡用真實庫的 491 個方言點 + 真實離線底圖跑 fitTransform(1074×1000, padding 12)：
-     * 內容高寬比須等於兩軸弧度跨度比（誤差 < 1%）、contentHeight 必須 > 500 px、
-     * 投影點不得共線、Voronoi 單元格必須全部落在 contentBounds 內。
+     * 這裡用真實庫的 491 個方言點 + 真實離線底圖（2026-11-25 收窄後 12 省／20 環／1,325 頂點）
+     * 跑 fitTransform(1074×1000, padding 12)：內容高寬比須等於兩軸弧度跨度比（誤差 < 1%）、
+     * contentHeight 必須 > 500 px、投影點不得共線；底圖框（108.0–117.2E／22.8–31.9N）內 469 點
+     * 須落在 contentBounds 內、框外 22 點須落在框外；Voronoi 單元格（直調 voronoiCells，不經 UI 過濾，
+     * 故仍以全部 491 點計算）必須全部裁剪在 contentBounds 內。
      */
     @Test
     fun mapProjectionKeepsGeographicProportion() = runBlocking {
@@ -2268,7 +2311,7 @@ class DataLayerTest {
         assertEquals("491 個方言點的經緯度應全部有效", 491, located.size)
 
         val shapes = MapAssets.load(InstrumentationRegistry.getInstrumentation().targetContext)
-        assertEquals("離線底圖應有 20 個省級輪廓", 20, shapes.size)
+        assertEquals("離線底圖應有 12 個省級輪廓（2026-11-25 收窄後）", 12, shapes.size)
 
         val sites = located.map { MapSite(it.lang, it.lon!!, it.lat!!, 0, "#8B0000") }
         val transform = fitTransform(sites, shapes, 1074f, 1000f, 12f)
@@ -2295,16 +2338,39 @@ class DataLayerTest {
             transform.contentHeight > 500f
         )
 
-        // 2) 所有投影點都要落在內容框內（允許 ±0.5 px 的浮點誤差）。
+        // 2) 底圖裁切框（108.0–117.2E／22.8–31.9N）：框內點必須落在 contentBounds 內，框外點必須落在框外
+        //    （允許 ±0.5 px 的浮點誤差）。2026-11-25 收窄後 491 點中 469 點在框內、22 點在框外；
+        //    地圖頁只畫框內點（GeoMapView 以 visibleSiteIndices 過濾），但本測試的 Voronoi 仍直調全部 491 點。
         val bounds = transform.contentBounds()
+        val minLat = inverseMercatorY(transform.minMercatorY)
+        val maxLat = inverseMercatorY(transform.maxMercatorY)
+        var inBox = 0
+        var outBox = 0
         projected.forEachIndexed { index, point ->
-            assertTrue(
-                sites[index].lang + " 投影點 (" + point.first + ", " + point.second + ") 應落在 contentBounds " +
-                    "[" + bounds.left + ", " + bounds.right + "]×[" + bounds.top + ", " + bounds.bottom + "] 內",
-                point.first >= bounds.left - 0.5f && point.first <= bounds.right + 0.5f &&
-                    point.second >= bounds.top - 0.5f && point.second <= bounds.bottom + 0.5f
-            )
+            val site = sites[index]
+            val geographicallyInside =
+                site.lon in transform.minLon..transform.maxLon && site.lat in minLat..maxLat
+            val projectedInside = point.first >= bounds.left - 0.5f && point.first <= bounds.right + 0.5f &&
+                point.second >= bounds.top - 0.5f && point.second <= bounds.bottom + 0.5f
+            if (geographicallyInside) {
+                inBox++
+                assertTrue(
+                    site.lang + " 在底圖框內，投影點 (" + point.first + ", " + point.second + ") 應落在 contentBounds " +
+                        "[" + bounds.left + ", " + bounds.right + "]×[" + bounds.top + ", " + bounds.bottom + "] 內",
+                    projectedInside
+                )
+            } else {
+                outBox++
+                assertTrue(
+                    site.lang + " 在底圖框外（lon=" + site.lon + ", lat=" + site.lat + "），投影點 (" +
+                        point.first + ", " + point.second + ") 應落在 contentBounds " +
+                        "[" + bounds.left + ", " + bounds.right + "]×[" + bounds.top + ", " + bounds.bottom + "] 之外",
+                    !projectedInside
+                )
+            }
         }
+        assertEquals("底圖收窄後框內站點應為 469 個（共 491 點）", 469, inBox)
+        assertEquals("底圖收窄後框外站點應為 22 個（共 491 點）", 22, outBox)
 
         // 3) 點不得共線：y 標準差要佔內容高度的相當比例，且不同 y 值要夠多。
         val ys = projected.map { it.second.toDouble() }
@@ -2323,6 +2389,8 @@ class DataLayerTest {
         assertTrue("不同 y 值的點應 > 100 個（實際 " + distinctY + "）", distinctY > 100)
 
         // 4) 泰森多邊形必須裁剪在 contentBounds 內，不能像修正前那樣鋪成貫穿畫布的豎條。
+        //    這裡直調 voronoiCells、傳入全部 491 點（不經 UI 的框內過濾），故單元格數量仍等於站點數；
+        //    框外 22 點的單元格會被裁剪掉（回傳空列表），框內點的單元格則完整落在 contentBounds 內。
         val cells = voronoiCells(projected.map { PlanePoint(it.first, it.second) }, bounds)
         assertEquals("Voronoi 單元格數量應等於站點數", 491, cells.size)
         cells.forEachIndexed { index, cell ->

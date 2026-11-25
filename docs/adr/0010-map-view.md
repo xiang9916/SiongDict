@@ -13,8 +13,8 @@
 
 ### 1. 底图是离线派生的省级轮廓，随仓库入库
 
-- `tools/build_map.py`（纯 Python 3 标准库）从上游 MCPDict 的 `china.json` 中按 bbox **经度 100.2–119.7、纬度 21.5–33.5** 裁出湖南省域附近，用 Douglas–Peucker 简化（容差 **0.005°**），坐标保留 **4 位小数**，输出 `{"provinces":[{"name":…,"polygons":[[[lon,lat],…],…]}]}`。
-- 产物 `app/src/main/assets/maps/provinces.json`：**61,756 B、20 个省、44 个环、3,253 个顶点**，已入库。上游 `china.json`（约 928 KB）与任何原始 geojson 一律只留本机（`AGENTS.md` §1、§7.11）——仓库只放这一份派生底图。
+- `tools/build_map.py`（纯 Python 3 标准库）从上游 MCPDict 的 `china.json` 中按 bbox **经度 108.0–117.2、纬度 22.8–31.9**（2026-11-25 由 100.2–119.7／21.5–33.5 收窄，见「底图收窄」节）裁出湖南省域附近，用 Douglas–Peucker 简化（容差 **0.005°**），坐标保留 **4 位小数**，输出 `{"provinces":[{"name":…,"polygons":[[[lon,lat],…],…]}]}`。
+- 产物 `app/src/main/assets/maps/provinces.json`：**25,332 B、12 个省、20 个环、1,325 个顶点**，已入库。上游 `china.json`（约 928 KB）与任何原始 geojson 一律只留本机（`AGENTS.md` §1、§7.11）——仓库只放这一份派生底图。
 - 授权：源自 MCPDict（MIT），来源与重生成步骤写在 `app/src/main/assets/maps/README.md`。
 - 只做省级轮廓，不含市县界、河流、地名——需求只是「看出大致方位」，更细的底图会让资产变大且没有对应收益。
 
@@ -27,10 +27,10 @@
 ### 3. 泰森多边形：半平面裁剪，O(n²)
 
 - `analysis/Voronoi.kt` 对每个站点从画布矩形开始，依序用「到本站点不比到其他站点远」的半平面（`2(rx−sx)·p ≤ |r|² − |s|²`）裁剪，即 Sutherland–Hodgman：剩下的多边形就是它的势力范围。
-- 站点数 n ≤ 400，O(n²) 在手机上是毫秒级；只算画布内的有限单元，不需要处理无限单元。
+- 站点数 n ≤ 414（门槛 1 时有同源词的点），O(n²) 在手机上是毫秒级；只算画布内的有限单元，不需要处理无限单元。
 - 重合站点（距离恒等）不互相裁剪；多边形被裁到少于 3 点时返回空列表，调用端跳过填色。
 - 多边形用**类别调色盘**淡填（与聚类图例同一套色，见 ADR-0008 §7），站点用音典颜色，两套不混用。
-- 只画**参与当前聚类**的点（真实库默认门槛 4 时 214 点，手动门槛 1 时 400 点）：地图表达的是「这次分区的落点」，不是同源词库全量。
+- 只画**参与当前聚类**且**落在底图框内**的点（真实库默认门槛 5 时 219 点、门槛 1 时 414 点；其中框外 3／14 点不可见，见「底图收窄」）：地图表达的是「这次分区的落点」，不是同源词库全量。
 
 ### 4. 交互与入口
 
@@ -38,7 +38,7 @@
 - 手势：单指拖动 = 平移；双指捏合 = 缩放 **0.6–8 倍**；双击复原。手势只改缩放与平移，底图、多边形、站点、标签全画在同一变换下。
 - 轻点站点（命中半径 16dp）选中并显示详情（方言点、类别、义项／条目数），再点空白处取消；选中点半径加大。
 - 两个开关：**標籤**（`map_labels_switch`，默认开，10sp，上限 80 个——超出就不再画，避免糊成一片）与**多邊形**（`map_voronoi_switch`，默认开）。
-- 站点半径 4dp、选中 7dp、地图四周留白 12dp；站点缺经纬度时直接跳过（真实库 491/491 有效，正常情况下不会跳过）。
+- 站点半径 4dp、选中 7dp、点击命中 16dp、标签 10sp 均为**屏幕像素**（不随地图缩放放大；站点在视口变换之外按 `ViewportMath.screenPosition()` 的屏幕坐标绘制）；地图四周留白 12dp；站点缺经纬度时直接跳过（真实库 491/491 有效，正常情况下不会跳过）。
 
 ### 5. 降级：底图缺失只画站点
 
@@ -56,6 +56,14 @@
 - **修法**：经度先 `× π/180` 换成弧度，与 Mercator 纵坐标同单位、共用同一 `scale`；`MapTransform` 显式记录 `contentWidth`／`contentHeight` 并提供 `contentBounds()`；`GeoMapView` 的泰森多边形改为裁剪到 `contentBounds()` 并 `clipRect`，不再铺满整个画布。
 - **修正后真实尺寸**：1074×1000 画布、padding 12dp 时内容约 **1050 × 730.5 px**（宽高比 1.437）；491 个站点投影后 y 标准差约 **97.6 px**（contentHeight 的 0.134 倍），不同 y 值 490 个——点不再共线。
 - **回归锁**：JVM `MapProjectionTest` 的 `projectedAxesUseSameScale`（两轴每弧度像素数一致）、`threeSitesOnDifferentLatitudesDoNotCollapse`（不同纬度纵向跨度 > 100 px）、`fitTransformUsesShapeBoundsAndKeepsAspectRatio`（内容宽高比 = 弧度跨度比、contentHeight 不能是横带）；仪器化 `DataLayerTest.mapProjectionKeepsGeographicProportion`（真实 491 点 + 真实底图：内容高宽比误差 < 1%、contentHeight > 500 px、点不共线、Voronoi 单元格落在 contentBounds 内）。改动 `MapProjection` 的单位约定时这几条会先红。
+
+## 底图收窄（2026-11-25）
+
+- **背景**：地图页上线后维护者实地核对，发现底图南界到 21.5°N、北界到 33.5°N，把大片没有方言点的区域（广西北部、黔东南、赣北等）也画了进来，地图页内容偏小、站点挤在中央。2026-11-25 维护者在截图上用黄框标出实际需要的范围，据此反算黄框四角经纬度约 **108.07–117.18°E ／ 22.81–31.84°N**，取整为 **经度 108.0–117.2、纬度 22.8–31.9**。
+- **改动**：`tools/build_map.py` 的 `MIN_LON/MAX_LON/MIN_LAT/MAX_LAT` 改为 `108.0/117.2/22.8/31.9`（容差 0.005°、保留 4 位小数不变），重生成 `app/src/main/assets/maps/provinces.json`：**25,332 B、12 个省、20 个环、1,325 个顶点**（原 61,756 B／20 省／44 环／3,253 顶点），md5 `a865986c8303031679bc8050afaf2f9a`。整省出框被移除 8 个：江蘇、浙江、澳門、甘肅、臺灣、雲南、青海、香港。
+- **影响面**：491 个方言点中 **22 点在框外**（如安岳大平、宜賓蔡家、晴隆長流、樂至南沖寺、達縣安仁、金堂竹篙、漢陰田禾等，多为四川盆地与黔西南点）；参与聚类（有同源词）的 414 点里 **14 点在框外**，默认门槛 5 的 219 点里 **3 点在框外**（宜賓蔡家、晴隆長流、安岳大平）。
+- **同轮界面改动**（`ui/GeoMapView.kt`、`ui/ViewportMath.kt`）：框外站点**一律不可见**——不画、不进泰森多边形、不参与标签避让与轻点命中，框外点被选中时按未选中处理；站点圆（4dp／选中 7dp）、命中半径（16dp）、标签字号（10sp）改为**屏幕像素恒定**，放大时站点只变稀疏、不会变成大圆。`screenPosition()`／`visibleSiteIndices()` 收在 `ViewportMath.kt`，有 JVM 回归锁。
+- **测试口径**：底图 bbox 与「方言点经纬度范围」是两回事——数据范围仍是 100.2–119.7／21.5–33.5（491/491 有效），底图只剩其中 469 点。仪器化 `mapProjectionKeepsGeographicProportion` 改为逐点断言「框内 469 点在 `contentBounds()` 内、框外 22 点落在新 bbox 之外」，`Voronoi` 单元格数量仍直接调 `voronoiCells()` 按全部 491 点断言（不经过 UI 过滤）。
 
 ## 考虑过的方案
 
@@ -78,5 +86,5 @@
 - 资料管线：`tools/build_map.py`；资产 `app/src/main/assets/maps/provinces.json`（已入库）与 `app/src/main/assets/maps/README.md`（来源、授权、重生成步骤）。
 - 纯函数：`analysis/MapModels.kt`（`LonLat`、`ProvinceShape` 多环多边形、`MapSite`、`parseLonLat`）、`analysis/MapProjection.kt`（`mercatorY`／`inverseMercatorY`、`project`／`unproject`、`fitTransform`）、`analysis/Voronoi.kt`（`voronoiCells`、`PlaneRect`、`PlanePoint`）。
 - 数据与界面：`data/MapAssets.kt`（读 assets、缓存、降级）、`ui/ClusterMapScreen.kt`（全屏页、标题、两个开关、图例、选中详情、返回）、`ui/GeoMapView.kt`（Compose Canvas：省界底图 + 泰森多边形 + 站点 + 标签、手势与点选）。
-- 测试：地图相关 JVM 17 项——`MapProjectionTest` 8（Mercator 正反解、project/unproject 往返、fitTransform 缩放与置中、空底图退化、两轴同单位、等比宽高比、不同纬度不塌陷）、`VoronoiTest` 6（裁剪、重合站点、单站点、退化为空）、`GeoCoordinateTest` 3（经纬度解析与范围校验）；仪器化 27 项中聚類用例顺带断言每个点经纬度落在底图 bbox 内（100.2–119.7／21.5–33.5），`mapProjectionKeepsGeographicProportion` 用真实 491 点 + 真实底图锁投影单位与内容框。
+- 测试：地图相关 JVM 17 项——`MapProjectionTest` 8（Mercator 正反解、project/unproject 往返、fitTransform 缩放与置中、空底图退化、两轴同单位、等比宽高比、不同纬度不塌陷）、`VoronoiTest` 6（裁剪、重合站点、单站点、退化为空）、`GeoCoordinateTest` 3（经纬度解析与范围校验）；仪器化 29 项中聚类用例顺带断言每个点经纬度落在**数据范围**内（100.2–119.7／21.5–33.5，这是方言点分布范围、不是底图裁切框；底图框 108.0–117.2／22.8–31.9 只覆盖其中 469/491 点），`mapProjectionKeepsGeographicProportion` 用真实 491 点 + 真实底图锁投影单位与内容框（框内 469 点在 `contentBounds()` 内、框外 22 点在新 bbox 外）。
 - 发布：0.5-alpha.5 / versionCode 53（2026-11-20）对外发布，地图展示页随该版上线。
