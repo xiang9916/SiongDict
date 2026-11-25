@@ -216,7 +216,7 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词库存与调类不变量：2,938 条 / 210 组、本版新增的 57 组、两腿分開的调类范围，
+     * 同源词库存与调类不变量：3,760 条 / 277 组、本版累计新增的 124 组、两腿分開的调类范围，
      * 以及东安横塘随上游移出后 Saw_ge4 的成员数。直接读 cognates.db，覆盖人工编辑结果。
      */
     @Test
@@ -261,8 +261,15 @@ class DataLayerTest {
             // 2026-11-23 第五轮 120 条（Cold_laŋ4 +94、Cold_liaŋ4 +17、Hit_tæ3 +1、新建 Shout_iɔ5／Shout_kai 各 2），
             // 同日下飯 14 条（GoWithRice_pa5 8、GoWithRice_ien5 6，注释全非空），2,924/208 → 2,938/210。
             // 空注释例外 111 条与有注 9 条见 ADR-0005 附录二十三。
-            assertEquals(2938, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals(210, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            // 2026-11-23 知乎批 37 条（GetDamp_e3 12、GetDamp_yn5 3、GoDamp_iɔŋ2 2、Whole_ken3 14、
+            // HeatUp_xan5 2，另 Stacking_dot8 补 4 条），2,938/210 → 2,975/215；
+            // 同日 9 主题批 47 条（10 个新组，空注释 12 条），2,975/215 → 3,022/225。
+            // 两批 15 新组 84 条与 12 条空注释例外登记于 ADR-0005 附录二十四。
+            // 2026-11-25 第八轮 738 条 52 组（48 项裁决：51 个新组 733 条 + Wash_iuk8 5 条；另有既有 Flush_dzau6
+            // 25 行改名为 Wash_dzau6、义项并入 Wash／洗滌），3,022/225 → 3,760/277；本批空注释例外 149 条
+            // 登记于 ADR-0005 附录二十五。
+            assertEquals(3760, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals(277, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
 
             val added = listOf(
                 "ShakeOffDust_lɔŋ4", "ShakeOffDust_pʰɔŋ3", "Naughty_tsa1",
@@ -282,10 +289,314 @@ class DataLayerTest {
                 "LookFor_nien2", "Hit_pʰiaŋ3",
                 "Devour_tai3", "Cangue_ka1", "Extinguish_i5",
                 "Shout_iɔ5", "Shout_kai",
-                "GoWithRice_pa5", "GoWithRice_ien5"
+                "GoWithRice_pa5", "GoWithRice_ien5",
+                "GetDamp_e3", "GetDamp_yn5", "GoDamp_iɔŋ2", "Whole_ken3", "HeatUp_xan5",
+                "Pot_bo2", "Powder_sa5", "Hang_gɔŋ2", "Hollow_mau1", "Thick_tɕiuŋ3",
+                "Stubborn_ge6", "Spin_son5", "Whole_dzon2", "Spring_dzon2", "Alley_laŋ6",
+                "Berry_pʰiu1",
+                "Birth_tʰon5",
+                "Chafe_xai5",
+                "Circle_lon2",
+                "Climb_uai1",
+                "Climb_uat7",
+                "DaughterInLaw_səi5",
+                "Deceive_tʃʰiɔk7",
+                "Deceive_ʒiɔk8",
+                "Dig_ki1",
+                "Gust_kan3",
+                "Miscarriage_ɣuã4",
+                "OpenEyes_guai2",
+                "Peck_tsan1",
+                "Peck_tʃuat7",
+                "Plague_tsɔi1",
+                "Sag_tʰia3",
+                "ServeRice_tiɔŋ1",
+                "Sluggish_xɔn",
+                "Squeeze_lat7",
+                "Wilt_iɔŋ1",
+                "All_kau1",
+                "Bone_kʰau1",
+                "Borrow_tso3",
+                "Cherish_ɣuŋ6",
+                "Cotton_pɔi5",
+                "Crop_ɣai2",
+                "Dull_gui7",
+                "Hungry_dzau2",
+                "Itch_nəu1",
+                "Jar_aŋ1",
+                "Measure_moi3",
+                "Mortar_kʰon3",
+                "Navel_pu7",
+                "Poker_tsʰau5",
+                "Porridge_mi2",
+                "Push_xiau1",
+                "Wash_iuk8",
+                "Roll_lien5",
+                "Saw_sai1",
+                "Smell_dzui2",
+                "SonInLaw_tɔi1",
+                "Struggle_dʒia2",
+                "Tie_tʰiak7",
+                "Wheal_biau3",
+                "Worry_kek7",
+                "Prick_lat7",
+                "Put_go6",
+                "Ridge_kʰɔm3",
+                "Ridge_kʰɔm5",
+                "Scald_lat8",
+                "Left_tso5"
             )
             for (g in added) {
                 assertTrue("缺少同源词组 $g", scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g) >= 2)
+            }
+
+            // 2026-11-25 第八轮：既有 Flush_dzau6（25 行）改名 Wash_dzau6、义项 Wash／洗滌，成员与条数不变，旧名不得残留。
+            assertEquals(0, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Flush_dzau6'"))
+            assertEquals(0, scalar("SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Flush_dzau6'"))
+            assertEquals(25, scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = 'Wash_dzau6'"))
+            assertEquals(25, scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = 'Wash_dzau6'"))
+            assertEquals(
+                "Wash_dzau6 组参数（Wash/洗滌，25 条 25 点）",
+                1,
+                scalar(
+                    "SELECT COUNT(*) FROM cognate_groups WHERE cognate_group = 'Wash_dzau6' " +
+                        "AND semantic_tag = 'Wash' AND semantic_label = '洗滌' AND member_count = 25 AND dialect_count = 25"
+                )
+            )
+
+            // 2026-11-23 两批新增 15 组 84 条（知乎批 5 组 + 9 主题批 10 组，见 ADR-0005 附录二十四）：
+            // 逐组写死条数、方言点数、空注释数、调类分布；空注释 12 条全部在 9 主题批
+            // （Hang_gɔŋ2 4、Whole_dzon2 4、Alley_laŋ6 2、Spring_dzon2 2）。
+            val newGroups = mapOf(
+                "GetDamp_e3" to intArrayOf(12, 11, 0),
+                "GetDamp_yn5" to intArrayOf(3, 3, 0),
+                "GoDamp_iɔŋ2" to intArrayOf(2, 2, 0),
+                "Whole_ken3" to intArrayOf(14, 14, 0),
+                "HeatUp_xan5" to intArrayOf(2, 2, 0),
+                "Stacking_dot8" to intArrayOf(39, 39, 4),
+                "Pot_bo2" to intArrayOf(5, 5, 0),
+                "Powder_sa5" to intArrayOf(2, 2, 0),
+                "Hang_gɔŋ2" to intArrayOf(4, 4, 4),
+                "Hollow_mau1" to intArrayOf(2, 2, 0),
+                "Thick_tɕiuŋ3" to intArrayOf(15, 15, 0),
+                "Stubborn_ge6" to intArrayOf(5, 5, 0),
+                "Spin_son5" to intArrayOf(3, 3, 0),
+                "Whole_dzon2" to intArrayOf(4, 4, 4),
+                "Spring_dzon2" to intArrayOf(2, 2, 2),
+                "Alley_laŋ6" to intArrayOf(5, 5, 2),
+                "Berry_pʰiu1" to intArrayOf(4, 4, 0),
+                "Birth_tʰon5" to intArrayOf(6, 6, 0),
+                "Chafe_xai5" to intArrayOf(7, 7, 0),
+                "Circle_lon2" to intArrayOf(7, 7, 0),
+                "Climb_uai1" to intArrayOf(3, 3, 0),
+                "Climb_uat7" to intArrayOf(2, 2, 0),
+                "DaughterInLaw_səi5" to intArrayOf(7, 7, 0),
+                "Deceive_tʃʰiɔk7" to intArrayOf(4, 4, 0),
+                "Deceive_ʒiɔk8" to intArrayOf(11, 11, 0),
+                "Dig_ki1" to intArrayOf(2, 2, 0),
+                "Gust_kan3" to intArrayOf(7, 7, 0),
+                "Miscarriage_ɣuã4" to intArrayOf(10, 10, 0),
+                "OpenEyes_guai2" to intArrayOf(4, 4, 0),
+                "Peck_tsan1" to intArrayOf(4, 4, 0),
+                "Peck_tʃuat7" to intArrayOf(102, 100, 60),
+                "Plague_tsɔi1" to intArrayOf(13, 13, 0),
+                "Sag_tʰia3" to intArrayOf(3, 3, 0),
+                "ServeRice_tiɔŋ1" to intArrayOf(31, 5, 13),
+                "Sluggish_xɔn" to intArrayOf(4, 4, 0),
+                "Squeeze_lat7" to intArrayOf(5, 5, 0),
+                "Wilt_iɔŋ1" to intArrayOf(3, 3, 0),
+                "All_kau1" to intArrayOf(8, 8, 0),
+                "Bone_kʰau1" to intArrayOf(7, 7, 0),
+                "Borrow_tso3" to intArrayOf(10, 10, 0),
+                "Cherish_ɣuŋ6" to intArrayOf(4, 4, 0),
+                "Cotton_pɔi5" to intArrayOf(9, 9, 0),
+                "Crop_ɣai2" to intArrayOf(7, 7, 0),
+                "Dull_gui7" to intArrayOf(4, 4, 0),
+                "Hungry_dzau2" to intArrayOf(13, 13, 0),
+                "Itch_nəu1" to intArrayOf(4, 4, 0),
+                "Jar_aŋ1" to intArrayOf(4, 4, 0),
+                "Measure_moi3" to intArrayOf(7, 7, 0),
+                "Mortar_kʰon3" to intArrayOf(7, 7, 0),
+                "Navel_pu7" to intArrayOf(6, 6, 0),
+                "Poker_tsʰau5" to intArrayOf(5, 5, 0),
+                "Porridge_mi2" to intArrayOf(9, 9, 0),
+                "Push_xiau1" to intArrayOf(13, 13, 0),
+                "Wash_iuk8" to intArrayOf(5, 5, 0),
+                "Roll_lien5" to intArrayOf(13, 13, 0),
+                "Saw_sai1" to intArrayOf(9, 9, 0),
+                "Smell_dzui2" to intArrayOf(8, 8, 0),
+                "SonInLaw_tɔi1" to intArrayOf(6, 6, 0),
+                "Struggle_dʒia2" to intArrayOf(5, 5, 0),
+                "Tie_tʰiak7" to intArrayOf(56, 56, 0),
+                "Wheal_biau3" to intArrayOf(2, 2, 0),
+                "Worry_kek7" to intArrayOf(7, 7, 0),
+                "Prick_lat7" to intArrayOf(8, 8, 0),
+                "Put_go6" to intArrayOf(13, 12, 0),
+                "Ridge_kʰɔm3" to intArrayOf(16, 14, 1),
+                "Ridge_kʰɔm5" to intArrayOf(68, 66, 23),
+                "Scald_lat8" to intArrayOf(105, 103, 6),
+                "Left_tso5" to intArrayOf(61, 60, 46)
+            )
+            for ((g, want) in newGroups) {
+                assertEquals("$g 条数", want[0], scalar("SELECT COUNT(*) FROM cognates WHERE cognate_group = ?", g))
+                assertEquals(
+                    "$g 方言点数",
+                    want[1],
+                    scalar("SELECT COUNT(DISTINCT lang) FROM cognates WHERE cognate_group = ?", g)
+                )
+                assertEquals(
+                    "$g 空注释数",
+                    want[2],
+                    scalar(
+                        "SELECT COUNT(*) FROM cognates WHERE cognate_group = ? AND (note IS NULL OR TRIM(note) = '')",
+                        g
+                    )
+                )
+            }
+            val newGroupTones = mapOf(
+                "GetDamp_e3" to "3:12",
+                "GetDamp_yn5" to "5:2,7:1",
+                "GoDamp_iɔŋ2" to "2:2",
+                "Whole_ken3" to "2:1,3:12,5:1",
+                "HeatUp_xan5" to "5:2",
+                "Stacking_dot8" to "1:1,2:4,5:21,6:3,7:9,8:1",
+                "Pot_bo2" to "2:5",
+                "Powder_sa5" to "5:2",
+                "Hang_gɔŋ2" to "2:4",
+                "Hollow_mau1" to "1:2",
+                "Thick_tɕiuŋ3" to "3:15",
+                "Stubborn_ge6" to "2:1,5:2,6:2",
+                "Spin_son5" to "5:1,6:2",
+                "Whole_dzon2" to "2:4",
+                "Spring_dzon2" to "2:2",
+                "Alley_laŋ6" to "5:3,6:2",
+                "Berry_pʰiu1" to "1:4",
+                "Birth_tʰon5" to "5:6",
+                "Chafe_xai5" to "5:7",
+                "Circle_lon2" to "2:7",
+                "Climb_uai1" to "1:3",
+                "Climb_uat7" to "7:2",
+                "DaughterInLaw_səi5" to "2:2,4:2,5:3",
+                "Deceive_tʃʰiɔk7" to "7:4",
+                "Deceive_ʒiɔk8" to "5:9,7:2",
+                "Dig_ki1" to "1:2",
+                "Gust_kan3" to "3:7",
+                "Miscarriage_ɣuã4" to "3:2,4:1,5:1,6:6",
+                "OpenEyes_guai2" to "2:4",
+                "Peck_tsan1" to "1:4",
+                "Peck_tʃuat7" to "5:54,7:48",
+                "Plague_tsɔi1" to "1:13",
+                "Sag_tʰia3" to "3:3",
+                "ServeRice_tiɔŋ1" to "1:12,3:6,5:13",
+                "Sluggish_xɔn" to "1:4",
+                "Squeeze_lat7" to "7:5",
+                "Wilt_iɔŋ1" to "1:3",
+                "All_kau1" to "1:8",
+                "Bone_kʰau1" to "1:6,6:1",
+                "Borrow_tso3" to "3:10",
+                "Cherish_ɣuŋ6" to "2:1,6:3",
+                "Cotton_pɔi5" to "5:7,6:2",
+                "Crop_ɣai2" to "2:5,4:2",
+                "Dull_gui7" to "1:1,6:2,7:1",
+                "Hungry_dzau2" to "2:13",
+                "Itch_nəu1" to "1:4",
+                "Jar_aŋ1" to "1:3,7:1",
+                "Measure_moi3" to "1:1,3:6",
+                "Mortar_kʰon3" to "3:7",
+                "Navel_pu7" to "7:6",
+                "Poker_tsʰau5" to "2:1,5:4",
+                "Porridge_mi2" to "1:1,2:8",
+                "Push_xiau1" to "1:13",
+                "Wash_iuk8" to "5:5",
+                "Roll_lien5" to "5:13",
+                "Saw_sai1" to "1:9",
+                "Smell_dzui2" to "2:8",
+                "SonInLaw_tɔi1" to "1:4,3:2",
+                "Struggle_dʒia2" to "2:5",
+                "Tie_tʰiak7" to "1:9,2:4,5:2,6:2,7:39",
+                "Wheal_biau3" to "3:1,6:1",
+                "Worry_kek7" to "1:5,7:2",
+                "Prick_lat7" to "6:1,7:7",
+                "Put_go6" to "1:3,2:1,5:1,6:3,7:5",
+                "Ridge_kʰɔm3" to "3:16",
+                "Ridge_kʰɔm5" to "5:68",
+                "Scald_lat8" to "3:1,5:90,6:7,7:7",
+                "Left_tso5" to "5:61"
+            )
+            for ((g, want) in newGroupTones) {
+                assertEquals("$g 调类分布", want, toneProfile(g))
+            }
+            assertEquals(
+                "空注释 859 条（附录十九至二十五累计例外）",
+                859,
+                scalar("SELECT COUNT(*) FROM cognates WHERE note IS NULL OR TRIM(note) = ''")
+            )
+            assertEquals(
+                "(lang, ipa) 重复对 62（口径：同一 lang+ipa 出现多行的值数、共 136 行；其中跨组同键 42）",
+                62,
+                scalar("SELECT COUNT(*) FROM (SELECT lang, ipa FROM cognates GROUP BY lang, ipa HAVING COUNT(*) > 1)")
+            )
+            assertEquals(
+                "跨组同键（同 lang+ipa 挂在不同 cognate_group）应有 42 个",
+                42,
+                scalar(
+                    "SELECT COUNT(*) FROM (SELECT lang, ipa FROM cognates GROUP BY lang, ipa " +
+                        "HAVING COUNT(DISTINCT cognate_group) > 1)"
+                )
+            )
+
+            // 12 条空注释例外逐条写死（id 唯一锁定行；id 2956–3039 为两批新增段）。
+            val emptyExceptions = listOf(
+                "3000|安鄉|Hang_gɔŋ2",
+                "3001|臨澧珠日|Hang_gɔŋ2",
+                "3002|津市渡口|Hang_gɔŋ2",
+                "3003|慈利|Hang_gɔŋ2",
+                "3029|臨澧|Whole_dzon2",
+                "3030|慈利|Whole_dzon2",
+                "3031|石門|Whole_dzon2",
+                "3032|桑植芙蓉橋|Whole_dzon2",
+                "3033|慈利|Spring_dzon2",
+                "3034|桑植芙蓉橋|Spring_dzon2",
+                "3038|常德|Alley_laŋ6",
+                "3039|慈利|Alley_laŋ6"
+            )
+            for (row in emptyExceptions) {
+                assertEquals(
+                    "空注释例外 $row 应恰为一条",
+                    1,
+                    scalar(
+                        "SELECT COUNT(*) FROM cognates WHERE id || '|' || lang || '|' || cognate_group = ?",
+                        row
+                    )
+                )
+            }
+            assertEquals(
+                "两批新增段（id 2956–3039）空注释应恰为 12 条",
+                12,
+                scalar("SELECT COUNT(*) FROM cognates WHERE id BETWEEN 2956 AND 3039 AND (note IS NULL OR TRIM(note) = '')")
+            )
+            assertEquals(
+                "第八轮新增段（id 3040–3777）应恰为 738 条、52 组",
+                738,
+                scalar("SELECT COUNT(*) FROM cognates WHERE id BETWEEN 3040 AND 3777")
+            )
+            assertEquals(
+                "第八轮新增段（id 3040–3777）空注释应恰为 149 条（ADR-0005 附录二十五）",
+                149,
+                scalar("SELECT COUNT(*) FROM cognates WHERE id BETWEEN 3040 AND 3777 AND (note IS NULL OR TRIM(note) = '')")
+            )
+
+            // 按设计保留的跨组同键：跨组同键 3 例（同 lang+ipa 分别挂两个组），不得合并。
+            for (id in listOf(3025, 3030, 3032, 3033, 3034)) {
+                assertEquals(
+                    "id $id 的同 lang+ipa 应恰有 2 行（跨组同键）",
+                    2,
+                    scalar(
+                        "SELECT COUNT(*) FROM cognates WHERE lang = (SELECT lang FROM cognates WHERE id = ?) " +
+                            "AND ipa = (SELECT ipa FROM cognates WHERE id = ?)",
+                        id.toString(), id.toString()
+                    )
+                )
             }
 
             // 2026-11-10 用户裁决：8 组音类标签改名，成员与条数不变，旧名不得残留。
@@ -1483,8 +1794,10 @@ class DataLayerTest {
      * 第四轮入库（ADR-0005 附录二十二）：新建 Devour_tai3（5 条 5 点）、Cangue_ka1（9 条 9 点）、
      * Extinguish_i5（18 条 18 点），以及桑植芙蓉橋 tæ3 跨组同音（Hit_tæ3 与 Devour_tai3 各一行）的裁定。
      * 2026-11-23 第五轮 120 条 + 下飯 14 条（ADR-0005 附录二十三）后库存 2,938 条 / 210 组；
-     * 空注释 698（第五轮新增 111 条例外，下飯 14 条注释全非空）；(lang, ipa) 重复对 46
-     * （新增漣源橋頭河|i5：Extinguish_i5 与 GoWithRice_ien5 跨组并存）。
+     * 同日知乎批 37 条、9 主题批 47 条（ADR-0005 附录二十四）后库存 3,022 条 / 225 组；
+     * 2026-11-25 第八轮 738 条 52 组（ADR-0005 附录二十五）后库存 3,760 条 / 277 组；
+     * 空注释 859（附录十九至二十五累计例外）；(lang, ipa) 重复对 62、共 136 行
+     * （口径：同一 lang+ipa 出现多行的值数，其中跨组同键 42）。
      */
     @Test
     fun fourthRoundGroupsMatchDatabase() = runBlocking {
@@ -1520,23 +1833,24 @@ class DataLayerTest {
                     rows.joinToString(",")
                 }
 
-            assertEquals("cognates 全表 2,938 条", 2938, scalar("SELECT COUNT(*) FROM cognates"))
-            assertEquals("音类组 210 个", 210, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
+            assertEquals("cognates 全表 3,760 条", 3760, scalar("SELECT COUNT(*) FROM cognates"))
+            assertEquals("音类组 277 个", 277, scalar("SELECT COUNT(DISTINCT cognate_group) FROM cognates"))
             assertEquals(
-                "空注释 698 条（附录十九、二十二既有 + 附录二十三新增 111 条例外）",
-                698,
+                "空注释 859 条（附录十九至二十五累计例外）",
+                859,
                 scalar("SELECT COUNT(*) FROM cognates WHERE note IS NULL OR TRIM(note) = ''")
             )
             assertEquals(
-                "(lang, ipa) 重复对 46（桑植芙蓉橋 tæ3、漣源橋頭河 i5 两处跨组并存，见附录二十二 §六与附录二十三 §七）",
-                46,
+                "(lang, ipa) 重复对 62、共 136 行（口径：同 lang+ipa 多行的值数；桑植芙蓉橋 tæ3、漣源橋頭河 i5、" +
+                    "慈利 tsʰan2、桑植芙蓉橋 tsʰɛn2、常德前河 ke6 等跨组并存，共 42 键）",
+                62,
                 scalar(
                     "SELECT COUNT(*) FROM (SELECT lang, ipa FROM cognates GROUP BY lang, ipa HAVING COUNT(*) > 1)"
                 )
             )
             assertEquals(
-                "最大 id 2955（下飯 14 条 id 2942–2955）",
-                2955,
+                "最大 id 3777（第八轮新增段 3040–3777，共 738 条）",
+                3777,
                 scalar("SELECT MAX(id) FROM cognates")
             )
 
@@ -1675,13 +1989,12 @@ class DataLayerTest {
     }
 
     /**
-     * 同源词成员关系端口（聚类相似度的最小输入）：全表 2,938 条、400 个方言点、210 组、141 个义项；
+     * 同源词成员关系端口（聚类相似度的最小输入）：全表 3,760 条、414 个方言点、277 组、195 个义项；
      * 每条 groupId 必须以 semanticTag + "_" 开头；抽查 Pile_tsut7（25 条）与 Curse_ʃwien3（8 条）；
      * 端口结果须与 cognates.db 直读的 (lang, groupId, semanticTag) 三元组完全一致。
      *
-     * 2,938 / 400 / 210 / 141 与两组条数是查 real 库（2026-11-23，ADR-0005 附录十九 14 条、
-     * 附录二十第三轮 3 新增/1 移动/1 删除/1 合并、附录二十二第四轮 3 组 32 条、
-     * 附录二十三第五轮 120 条之后）确认的版本事实。
+     * 3,760 / 414 / 277 / 195 与两组条数是查 real 库（2026-11-25，ADR-0005 附录十九至二十五累计、
+     * 第八轮 738 条 52 组之后）确认的版本事实。
      */
     @Test
     fun cognateMembershipsMatchDatabase() = runBlocking {
@@ -1689,10 +2002,10 @@ class DataLayerTest {
         d.maintenance.prepare()
         val memberships = d.cognateBook.memberships()
 
-        assertEquals("cognates 全表 2,938 条成员", 2938, memberships.size)
-        assertEquals("成员应覆盖 400 个方言点", 400, memberships.map { it.lang }.distinct().size)
-        assertEquals("成员应覆盖 210 个音类组", 210, memberships.map { it.groupId }.distinct().size)
-        assertEquals("成员应覆盖 141 个义项", 141, memberships.map { it.semanticTag }.distinct().size)
+        assertEquals("cognates 全表 3,760 条成员", 3760, memberships.size)
+        assertEquals("成员应覆盖 414 个方言点", 414, memberships.map { it.lang }.distinct().size)
+        assertEquals("成员应覆盖 277 个音类组", 277, memberships.map { it.groupId }.distinct().size)
+        assertEquals("成员应覆盖 195 个义项", 195, memberships.map { it.semanticTag }.distinct().size)
 
         assertTrue("lang 不得为空", memberships.all { it.lang.isNotBlank() })
         assertTrue("groupId 不得为空", memberships.all { it.groupId.isNotBlank() })
@@ -1745,9 +2058,10 @@ class DataLayerTest {
      * Log 行供驗證員跑完儀器化後用 adb logcat -d -s ClusterTest 讀取真實數字：
      * k／輪廓係數／Q／類別規模／完整候選表／默認門槛與其分析結果。
      *
-     * 注意：下方的 400／5／66／4／214／2／91／186 與 2026-11-23 儀器化 logcat 實測一致
-     * （門槛 1 → k=5、規模 147/112/25/71/45、輪廓 0.15074897；默認門槛 4 → k=2、184/30、
-     * 輪廓 0.21485886）。第五輪同源詞庫由 2,804 條／383 點增至 2,938 條／400 點，參與點數隨庫增長；
+     * 注意：下方的 414／3／21／75／5／219／3／93/97/29／77／195 與 2026-11-25 儀器化實測一致
+     * （門槛 1 → 414 點、k=3、規模 190/185/39、輪廓 0.15090147、Q 0.21497218；默認門槛 5 → 219 點、k=3、
+     * 93/97/29、輪廓 0.25222296、Q 0.2039756、無同源詞排除 77、義項不足排除 195）。同源詞庫由 3,022 條／402 點
+     * 增至 3,760 條／414 點（附錄二十五第八輪 738 條 52 組），參與點數隨庫增長；
      * 若資料變動導致不符，先記錄實測值、回填文檔，不要為過而放寬斷言。
      */
     @Test
@@ -1757,13 +2071,14 @@ class DataLayerTest {
         val profiles = d.lexicon.dialectProfiles()
         val memberships = d.cognateBook.memberships()
 
-        // 門槛 1：全部有同源詞的點（真實库 400 點）。
+        // 門槛 1：全部有同源詞的點（真實库 414 點）。
         val result = ClusterEngine.analyze(profiles, memberships)
         Log.i(
             "ClusterTest",
             "points=${result.points.size} k=${result.communities.k} " +
                 "sil=${result.optimalSilhouette} Q=${result.modularity} " +
-                "sizes=${result.communities.clusters.map { it.size }}"
+                "sizes=${result.communities.clusters.map { it.size }} " +
+                "excludedNoCognates=${result.excludedNoCognates} excludedSparse=${result.excludedSparse}"
         )
         Log.i(
             "ClusterTest",
@@ -1785,8 +2100,8 @@ class DataLayerTest {
             "默认最小义项数应落在 1..$maxMinTags（实际 $defaultMinTags）",
             defaultMinTags in 1..maxMinTags
         )
-        assertEquals("默認最小義項數應為 4（儀器化實測）", 4, defaultMinTags)
-        assertEquals("最大義項數應為 66（道縣梅花）", 66, maxMinTags)
+        assertEquals("默認最小義項數應為 5（2026-11-25 儀器化實測）", 5, defaultMinTags)
+        assertEquals("最大義項數應為 75（2026-11-25 儀器化實測）", 75, maxMinTags)
 
         val atDefault = ClusterEngine.analyze(profiles, memberships, minTags = defaultMinTags)
         val defaultSizes = atDefault.communities.clusters.map { it.size }
@@ -1797,16 +2112,16 @@ class DataLayerTest {
                 "sizes=$defaultSizes excludedNoCognates=${atDefault.excludedNoCognates} " +
                 "excludedSparse=${atDefault.excludedSparse}"
         )
-        assertEquals("默認門槛應參與 214 點（儀器化實測）", 214, atDefault.points.size)
-        assertEquals("默認門槛下自動類數應為 2（儀器化實測，規模 184/30）", 2, atDefault.communities.k)
+        assertEquals("默認門槛應參與 219 點（2026-11-25 儀器化實測）", 219, atDefault.points.size)
+        assertEquals("默認門槛下自動類數應為 3（2026-11-25 儀器化實測，規模 93/97/29）", 3, atDefault.communities.k)
         assertEquals(
-            "默認門槛下類別規模應為 184/30（2026-11-23 儀器化實測）",
-            listOf(184, 30),
+            "默認門槛下類別規模應為 93/97/29（2026-11-25 儀器化實測）",
+            listOf(93, 97, 29),
             defaultSizes
         )
         assertEquals(
-            "默認門槛下輪廓係數（2026-11-23 實測 0.21485886）",
-            0.21485886f,
+            "默認門槛下輪廓係數（2026-11-25 實測 0.25222296）",
+            0.25222296f,
             atDefault.optimalSilhouette,
             5e-4f
         )
@@ -1817,8 +2132,8 @@ class DataLayerTest {
             0f
         )
         assertFalse("默認門槛下不應標為稀疏", atDefault.sparse)
-        assertEquals("默認門槛應排除 91 個無同源詞的點", 91, atDefault.excludedNoCognates)
-        assertEquals("默認門槛應排除 186 個義項不足的點", 186, atDefault.excludedSparse)
+        assertEquals("默認門槛應排除 77 個無同源詞的點", 77, atDefault.excludedNoCognates)
+        assertEquals("默認門槛應排除 195 個義項不足的點", 195, atDefault.excludedSparse)
         assertEquals(
             "參與點 + 兩類排除應等於可見方言點 491",
             atDefault.visibleDialects,
@@ -1874,16 +2189,16 @@ class DataLayerTest {
         )
 
         // —— 門槛 1 的不變量：候選分區 / 自動分區 / 稀疏判定 / 坐標 ——
-        assertEquals("參與聚類的點應為 400（真實库全部有同源詞的點）", 400, result.points.size)
-        assertEquals("自動類數應為 5（2026-11-23 儀器化實測）", 5, result.communities.k)
+        assertEquals("參與聚類的點應為 414（真實库全部有同源詞的點）", 414, result.points.size)
+        assertEquals("自動類數應為 3（2026-11-25 儀器化實測）", 3, result.communities.k)
         assertEquals(
-            "自動分區類別規模應為 147/112/25/71/45（2026-11-23 儀器化實測）",
-            listOf(147, 112, 25, 71, 45),
+            "自動分區類別規模應為 190/185/39（2026-11-25 儀器化實測）",
+            listOf(190, 185, 39),
             result.communities.clusters.map { it.size }
         )
         assertEquals(
-            "自動分區輪廓係數（2026-11-23 實測 0.15074897）",
-            0.15074897f,
+            "自動分區輪廓係數（2026-11-25 實測 0.15090147）",
+            0.15090147f,
             result.optimalSilhouette,
             5e-4f
         )
@@ -1930,6 +2245,8 @@ class DataLayerTest {
             "分群锚点布局應把同類收緊：類內平均距 $meanIntra 應小於類間質心平均距 $meanBetween",
             meanIntra < meanBetween
         )
+        assertEquals("分群锚点布局類內平均距（2026-11-25 實測）", 0.3010647, meanIntra, 5e-4)
+        assertEquals("分群锚点布局類間質心平均距（2026-11-25 實測）", 0.6635449, meanBetween, 5e-4)
     }
 
     /**
